@@ -243,9 +243,11 @@ if (app) {
   }
 
   window.confirm = () => {
+    console.debug('[sundesk] confirm() clicked');
     passwordPromptActive = false;
     const conn = globals.getConn();
     if (!conn) {
+      console.debug('[sundesk] confirm: no live connection, cancelling');
       window.cancel();
       return;
     }
@@ -254,7 +256,15 @@ if (app) {
     const password = document.querySelector('input#password').value;
     if (password) {
       document.querySelector('div#password').style.display = 'none';
-      globals.getConn().login(password);
+      try {
+        console.debug('[sundesk] confirm: calling login()');
+        conn.login(password);
+        console.debug('[sundesk] confirm: login() returned without throw');
+      } catch (e) {
+        console.error('[sundesk] confirm: login() THREW:', e);
+        // 连接可能已死（ws 关闭），回到连接页而不是卡死
+        window.cancel();
+      }
     }
   }
 }

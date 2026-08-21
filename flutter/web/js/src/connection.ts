@@ -439,6 +439,7 @@ export default class Connection {
     password?: Uint8Array
   }) {
     console.debug('[sundesk] login() called, has password input:', !!info?.password, ', stored password:', !!this._password);
+    console.debug('[sundesk] login: salt =', typeof this._hash?.salt, ', challenge =', typeof this._hash?.challenge, ', ws open =', this._ws?._status === 'open');
     if (info?.password) {
       const salt = this._hash?.salt;
       let p = hash([info.password, salt!]);
