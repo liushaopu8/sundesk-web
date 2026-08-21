@@ -22,6 +22,7 @@ if (app) {
     <tr><td></td><td><button onclick="connect();">Connect</button></td></tr>
   </table></div>
   <div id="password" style="display: none;">
+    <div id="password-hint" style="color: red; font-weight: bold; margin-bottom: 6px;"></div>
     <input type="password" id="password" />
     <button id="confirm" onclick="confirm()">Confirm</button>
     <button id="cancel" onclick="cancel();">Cancel</button>
@@ -195,6 +196,9 @@ if (app) {
         // 密码错重输 / 2FA：清空输入框
         document.querySelector('input#password').value = '';
       }
+      // 显示提示（如「密码错误，是否重新输入」）
+      const hint = document.querySelector('#password-hint');
+      if (hint) hint.textContent = (title || text) ? (title + (text ? ' ' + text : '')) : '';
       document.querySelector('div#status').style.display = 'none';
       document.querySelector('div#password').style.display = 'block';
     } else if (passwordPromptActive) {
@@ -227,6 +231,12 @@ if (app) {
 
   window.confirm = () => {
     passwordPromptActive = false;
+    const conn = globals.getConn();
+    if (!conn) {
+      // 连接已断开（密码框显示期间 ws 关闭），回到连接页而不是卡死
+      window.cancel();
+      return;
+    }
     const value = document.querySelector('input#password').value;
     if (!value) return;
     document.querySelector('div#password').style.display = 'none';
