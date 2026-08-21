@@ -53,18 +53,18 @@ jobs:
           cp flutter/web/yuv.js flutter/web/yuv.wasm flutter/web/favicon.svg site/
           ls -la site/
 
-      - name: Package artifact (zip, single folder)
+      - name: Assemble single folder
         run: |
           mkdir -p pkg/sundesk-web
           cp -r site/* pkg/sundesk-web/
-          cd pkg && zip -r ../sundesk-web-${{ env.VERSION }}-web-basic.zip sundesk-web
-          cd .. && sha256sum sundesk-web-${{ env.VERSION }}-web-basic.zip
+          # path 用 pkg/* 通配符：GitHub artifact 下载解压后直接是 sundesk-web/ 文件夹
+          # （upload-artifact 对通配符会自动展开一层，避免二次解压）
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: sundesk-web-${{ env.VERSION }}
-          path: sundesk-web-${{ env.VERSION }}-web-basic.zip
+          path: pkg/*
 
       # GitHub Pages 部署已停用（2026-08-21）：Pages 是 https，浏览器强制 wss://，
       # 本地 rustdesk-server 的 hbbs/hbbr 是明文 ws，无 TLS 反代连不上。
@@ -78,6 +78,11 @@ jobs:
       #     publish_branch: gh-pages
 
       - name: Publish release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cd pkg && zip -r ../sundesk-web-${{ env.VERSION }}-web-basic.zip sundesk-web
+        shell: bash
+      - name: Upload release asset (on tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
