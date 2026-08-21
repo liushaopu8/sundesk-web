@@ -16,7 +16,7 @@ const HOSTS = [
 ];
 const DEFAULT_KEY = "0xy+WlcTJWaO2bYTWlmecxKQquKXjNCWcCtrasaqLxU=";
 let HOST = localStorage.getItem("rendezvous-server") || HOSTS[0];
-const SCHEMA = "ws://";
+const SCHEMA = location.protocol === "https:" ? "wss://" : "ws://";
 
 type MsgboxCallback = (type: string, title: string, text: string, link: string) => void;
 type DrawCallback = (display: number, data: Uint8Array) => void;
