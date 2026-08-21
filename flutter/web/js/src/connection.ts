@@ -386,6 +386,14 @@ export default class Connection {
       if (err == consts.LOGIN_MSG_PASSWORD_EMPTY) {
         this._password = undefined;
         this.msgbox("input-password", "Password Required", "", "");
+        // 人工审批模式（密码不校验）：空密码会被直接接受 -> 自动进入画面。
+        // kiosk 模式：空密码会被拒（Wrong Password）-> 密码框等用户输入。
+        // 只自动尝试一次，避免干扰。
+        if (!this._autoEmptyLoginTried) {
+          this._autoEmptyLoginTried = true;
+          console.debug('[sundesk] auto empty-password login (manual-approval probe)');
+          this.login({ password: '' });
+        }
       }
       if (err == consts.LOGIN_MSG_PASSWORD_WRONG) {
         this._password = undefined;
