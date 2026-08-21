@@ -28,6 +28,7 @@ export default class Connection {
   _interval: any;
   _id: string;
   _hash: message.Hash | undefined;
+  _autoEmptyLoginTried: boolean = false;
   _msgbox: MsgboxCallback;
   _draw: DrawCallback;
   _peerInfo: message.PeerInfo | undefined;
@@ -392,7 +393,7 @@ export default class Connection {
         if (!this._autoEmptyLoginTried) {
           this._autoEmptyLoginTried = true;
           console.debug('[sundesk] auto empty-password login (manual-approval probe)');
-          this.login({ password: '' });
+          this.login({ password: new Uint8Array(0) });
         }
       }
       if (err == consts.LOGIN_MSG_PASSWORD_WRONG) {
