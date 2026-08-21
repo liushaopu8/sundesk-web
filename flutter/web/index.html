@@ -94,12 +94,11 @@
 </head>
 
 <body>
-  <div class="loading">
-    <div class="loader"></div>
-  </div>
+  <div id="app"></div>
   <!-- This script installs service_worker.js to provide PWA functionality to
        application. For more information, see:
        https://developers.google.com/web/fundamentals/primers/service-workers -->
+  <!-- Flutter app 已禁用（半成品 web UI），改用 js/dist/index.js 的精简 UI
   <script>
     var serviceWorkerVersion = null;
     var scriptLoaded = false;
@@ -164,6 +163,7 @@
       loadMainDartJs();
     }
   </script>
+  -->
   <script src="libs/firebase-app.js?8.10.1"></script>
   <script src="libs/firebase-analytics.js?8.10.1"></script>
 

@@ -56,6 +56,8 @@ jobs:
         run: |
           pushd flutter
           flutter build web --release
+          # 禁用 Flutter 半成品 UI，只保留 TS 精简 UI（js/dist/index.js）
+          sed -i '/flutter_bootstrap/d' build/web/index.html
           popd
 
       - name: Package
@@ -80,6 +82,8 @@ jobs:
         run: |
           pushd flutter
           flutter build web --release --base-href=/sundesk-web/
+          # 禁用 Flutter 半成品 UI，只保留 TS 精简 UI
+          sed -i '/flutter_bootstrap/d' build/web/index.html
           popd
 
       - name: Deploy to GitHub Pages
