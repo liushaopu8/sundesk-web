@@ -64,14 +64,16 @@ jobs:
           name: sundesk-web-${{ env.VERSION }}
           path: sundesk-web-${{ env.VERSION }}-web-basic.tar.gz
 
-      # GitHub Pages 部署（keep_files 默认 false：会清掉旧的 flutter 产物）
-      - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/main'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: site
-          publish_branch: gh-pages
+      # GitHub Pages 部署已停用（2026-08-21）：Pages 是 https，浏览器强制 wss://，
+      # 本地 rustdesk-server 的 hbbs/hbbr 是明文 ws，无 TLS 反代连不上。
+      # 测试改走本地构建（artifact / 本地 http server）。
+      # - name: Deploy to GitHub Pages
+      #   if: github.ref == 'refs/heads/main'
+      #   uses: peaceiris/actions-gh-pages@v4
+      #   with:
+      #     github_token: ${{ secrets.GITHUB_TOKEN }}
+      #     publish_dir: site
+      #     publish_branch: gh-pages
 
       - name: Publish release (on tag)
         if: startsWith(github.ref, 'refs/tags/')
