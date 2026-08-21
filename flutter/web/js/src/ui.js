@@ -189,14 +189,18 @@ if (app) {
       passwordPromptActive = true;
       document.querySelector('div#status').style.display = 'none';
       document.querySelector('div#password').style.display = 'block';
-    } else if (passwordPromptActive) {
-      // 密码确认框激活期间，忽略 connecting/首帧等消息，防止密码框被顶掉
-      console.debug('[sundesk] msgbox suppressed (password prompt active):', type, title, text);
-      return;
     } else if (!type) {
+      // 首帧到达 = 连接真正成功（含人工审批无密码模式：空登录直接被接受）
+      // 此时清掉密码框状态并显示画面，密码框只是"闪现"
+      passwordPromptActive = false;
       document.querySelector('div#canvas').style.display = 'block';
       document.querySelector('div#password').style.display = 'none';
       document.querySelector('div#status').style.display = 'none';
+    } else if (passwordPromptActive) {
+      // 密码框激活期间：只抑制中间状态消息（connecting/success 等），
+      // 不抑制首帧（上面已处理），也不影响 error（下面会显示）
+      console.debug('[sundesk] msgbox suppressed (password prompt active):', type, title, text);
+      return;
     } else if (type == 'error') {
       document.querySelector('div#status').style.display = 'block';
       document.querySelector('div#canvas').style.display = 'none';
