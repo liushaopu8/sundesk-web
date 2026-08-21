@@ -181,10 +181,16 @@ if (app) {
   }
 
   let passwordPromptActive = false;
+  let passwordPromptMode = 'password'; // 'password' | '2fa'
   function msgbox(type, title, text) {
     if (!globals.getConn()) return;
-    if (type == 'input-password') {
+    if (type == 'input-password' || type == 're-input-password' || type == 'input-2fa') {
       passwordPromptActive = true;
+      passwordPromptMode = type == 'input-2fa' ? '2fa' : 'password';
+      if (type != 'input-password') {
+        // 密码错重输 / 2FA：清空输入框
+        document.querySelector('input#password').value = '';
+      }
       document.querySelector('div#status').style.display = 'none';
       document.querySelector('div#password').style.display = 'block';
     } else if (passwordPromptActive) {
@@ -217,10 +223,13 @@ if (app) {
 
   window.confirm = () => {
     passwordPromptActive = false;
-    const password = document.querySelector('input#password').value;
-    if (password) {
-      document.querySelector('div#password').style.display = 'none';
-      globals.getConn().login(password);
+    const value = document.querySelector('input#password').value;
+    if (!value) return;
+    document.querySelector('div#password').style.display = 'none';
+    if (passwordPromptMode == '2fa') {
+      globals.getConn().send2fa(value);
+    } else {
+      globals.getConn().login(value);
     }
   }
 }
