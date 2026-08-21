@@ -14,7 +14,7 @@ const HOSTS = [
   "rs-cn.rustdesk.com",
   "rs-us.rustdesk.com",
 ];
-const DEFAULT_KEY = "0xy+WlcTJWaO2bYTWlmecxKQquKXjNCWcCtrasaqLxU=";
+const DEFAULT_KEY = "FSagyj6JvIpUf6xKzIKB1F3u1+xzUFuMT1sjry5zOyo=";
 let HOST = localStorage.getItem("rendezvous-server") || HOSTS[0];
 const SCHEMA = location.protocol === "https:" ? "wss://" : "ws://";
 
