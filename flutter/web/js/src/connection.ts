@@ -28,7 +28,6 @@ export default class Connection {
   _interval: any;
   _id: string;
   _hash: message.Hash | undefined;
-  _autoEmptyLoginTried: boolean = false;
   _msgbox: MsgboxCallback;
   _draw: DrawCallback;
   _peerInfo: message.PeerInfo | undefined;
@@ -241,14 +240,10 @@ export default class Connection {
       if (msg?.hash) {
         this._hash = msg?.hash;
         console.debug('[sundesk] got hash (salt+challenge), have password:', !!this._password);
-        if (!this._password)
-          this.msgbox("input-password", "Password Required", "");
-        // 恢复空登录探测（上游逻辑）：
-        // - 模式1（人工审批无密码）：空登录被接受 -> 首帧 -> 直接进画面（密码框闪现后消失）
-        // - 模式2（kiosk 密码）：空登录回 password empty -> 密码框保留等用户输入
-        // 之前误判空登录导致连接关闭（1005 是 rendezvous socket 的噪音，
-        // relay 一直活着），真正的坑是 login() 传参（字符串 vs 对象），
-        // 已在 ui.js confirm 修复（login({password})）。
+        // 先不弹密码框，发空登录探测，按响应分流：
+        // - NO_PASSWORD_ACCESS（无密码人工审批）：显示"等待对方确认"，批准后直接进
+        // - PASSWORD_EMPTY（密码模式）：弹密码框等用户输入
+        // - 直接成功：进画面
         this.login();
       } else if (msg?.test_delay) {
         const test_delay = msg?.test_delay;
@@ -386,15 +381,8 @@ export default class Connection {
     if (err) {
       if (err == consts.LOGIN_MSG_PASSWORD_EMPTY) {
         this._password = undefined;
+        console.debug('[sundesk] password required, showing prompt');
         this.msgbox("input-password", "Password Required", "", "");
-        // 人工审批模式（密码不校验）：空密码会被直接接受 -> 自动进入画面。
-        // kiosk 模式：空密码会被拒（Wrong Password）-> 密码框等用户输入。
-        // 只自动尝试一次，避免干扰。
-        if (!this._autoEmptyLoginTried) {
-          this._autoEmptyLoginTried = true;
-          console.debug('[sundesk] auto empty-password login (manual-approval probe)');
-          this.login({ password: new Uint8Array(0) });
-        }
       }
       if (err == consts.LOGIN_MSG_PASSWORD_WRONG) {
         this._password = undefined;
