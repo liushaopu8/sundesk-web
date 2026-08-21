@@ -257,8 +257,10 @@ if (app) {
     if (password) {
       document.querySelector('div#password').style.display = 'none';
       try {
-        console.debug('[sundesk] confirm: calling login()');
-        conn.login(password);
+        console.debug('[sundesk] confirm: calling login() with password');
+        // login() 期望对象 { password }；传字符串会被当成对象解析，
+        // info.password 为 undefined -> 变成空登录 -> 服务端永远回 password empty
+        conn.login({ password: password });
         console.debug('[sundesk] confirm: login() returned without throw');
       } catch (e) {
         console.error('[sundesk] confirm: login() THREW:', e);
