@@ -114,21 +114,29 @@ if (app) {
 
     cv.addEventListener('mousemove', (e) => {
       const p = mousePos(e);
-      window.setByName('send_mouse', JSON.stringify({ x: p.x, y: p.y }));
+      const msg = JSON.stringify({ x: p.x, y: p.y });
+      console.debug('[sundesk] send_mouse', msg);
+      window.setByName('send_mouse', msg);
     });
     cv.addEventListener('mousedown', (e) => {
       e.preventDefault();
       const p = mousePos(e);
-      window.setByName('send_mouse', JSON.stringify({ type: 'down', buttons: mouseBtn(e), x: p.x, y: p.y }));
+      const msg = JSON.stringify({ type: 'down', buttons: mouseBtn(e), x: p.x, y: p.y });
+      console.debug('[sundesk] send_mouse', msg);
+      window.setByName('send_mouse', msg);
     });
     cv.addEventListener('mouseup', (e) => {
       e.preventDefault();
       const p = mousePos(e);
-      window.setByName('send_mouse', JSON.stringify({ type: 'up', buttons: mouseBtn(e), x: p.x, y: p.y }));
+      const msg = JSON.stringify({ type: 'up', buttons: mouseBtn(e), x: p.x, y: p.y });
+      console.debug('[sundesk] send_mouse', msg);
+      window.setByName('send_mouse', msg);
     });
     cv.addEventListener('wheel', (e) => {
       e.preventDefault();
-      window.setByName('send_mouse', JSON.stringify({ type: 'wheel', buttons: 'wheel', y: String(Math.round(e.deltaY)) }));
+      const msg = JSON.stringify({ type: 'wheel', buttons: 'wheel', y: String(Math.round(e.deltaY)) });
+      console.debug('[sundesk] send_mouse', msg);
+      window.setByName('send_mouse', msg);
     });
 
     // 键盘：输入框聚焦时（填 Host/Key/Id）不转发
@@ -138,17 +146,22 @@ if (app) {
       const name = toRustKeyName(e);
       if (!name) return;
       e.preventDefault();
-      window.setByName('input_key', JSON.stringify(keyPayload(e, e.repeat ? { press: 'true' } : { down: 'true' })));
+      const msg = JSON.stringify(keyPayload(e, e.repeat ? { press: 'true' } : { down: 'true' }));
+      console.debug('[sundesk] input_key', msg);
+      window.setByName('input_key', msg);
     });
     document.addEventListener('keyup', (e) => {
       if (isInput(e)) return;
       const name = toRustKeyName(e);
       if (!name) return;
-      window.setByName('input_key', JSON.stringify(keyPayload(e, {})));
+      const msg = JSON.stringify(keyPayload(e, {}));
+      console.debug('[sundesk] input_key', msg);
+      window.setByName('input_key', msg);
     });
   }
 
   window.connect = () => {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     const host = document.querySelector('#host');
     localStorage.setItem('custom-rendezvous-server', host.value);
     const id = document.querySelector('#id');
