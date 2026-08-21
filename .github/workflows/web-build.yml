@@ -9,7 +9,6 @@ on:
 
 env:
   VERSION: "1.2.5"
-  FLUTTER_VERSION: "3.19.6"
 
 jobs:
   build-web:
@@ -22,80 +21,60 @@ jobs:
       - name: Prepare env
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y wget npm
+          sudo apt-get install -y wget npm python3
 
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2.12.0
-        with:
-          channel: "stable"
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
-
-      # https://rustdesk.com/docs/en/dev/build/web/
-      - name: Build JS deps
+      # 不再使用 flutter build：flutter 复制静态资源时尊重 .gitignore，
+      # 会过滤掉 vite 产物（js/dist）和 web_deps（ogvjs*/yuv-canvas*/libopus*），
+      # 导致线上 404。改为纯 vite 构建 + 手工组装静态站点。
+      - name: Build TS UI (vite)
         shell: bash
         run: |
           pushd flutter/web/js
           npm install yarn -g
-          npm install typescript -g
           npm install protoc -g
-          # ts-proto/vite 已声明在 package.json，勿用 npm 单独安装（会重写依赖树导致版本漂移）
           yarn install && yarn build
           popd
 
       - name: Download web deps
-        shell: bash
         run: |
-          pushd flutter/web
-          wget https://github.com/rustdesk/doc.rustdesk.com/releases/download/console/web_deps.tar.gz
-          tar xzf web_deps.tar.gz
-          popd
+          wget -q -O /tmp/web_deps.tar.gz https://github.com/rustdesk/doc.rustdesk.com/releases/download/console/web_deps.tar.gz
+          tar tzf /tmp/web_deps.tar.gz >/dev/null || { echo "web_deps download corrupted"; exit 1; }
 
-      - name: Build web (release)
+      - name: Assemble static site
         shell: bash
         run: |
-          pushd flutter
-          flutter build web --release
-          # 禁用 Flutter 半成品 UI，只保留 TS 精简 UI（js/dist/index.js）
-          sed -i '/flutter_bootstrap/d' build/web/index.html
-          popd
+          set -e
+          mkdir -p site
+          # vite 产物（index.html 引用 ./index.js、./vendor.js 相对路径）
+          cp -r flutter/web/js/dist/* site/
+          # web deps：ogvjs-1.8.6/、yuv-canvas-1.2.6.js、libopus.js/wasm
+          tar xzf /tmp/web_deps.tar.gz -C site/
+          # 其余静态资源
+          cp flutter/web/yuv.js flutter/web/yuv.wasm flutter/web/favicon.svg site/
+          ls -la site/
 
-      - name: Package
-        shell: bash
+      - name: Package artifact
         run: |
-          pushd flutter/build
-          dir_name="sundesk-web-${{ env.VERSION }}-web-basic"
-          mv web "${dir_name}" && tar czf "${dir_name}".tar.gz "${dir_name}"
-          sha256sum "${dir_name}".tar.gz
-          popd
+          tar czf sundesk-web-${{ env.VERSION }}-web-basic.tar.gz site
+          sha256sum sundesk-web-${{ env.VERSION }}-web-basic.tar.gz
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: sundesk-web-${{ env.VERSION }}
-          path: flutter/build/sundesk-web-*.tar.gz
+          path: sundesk-web-${{ env.VERSION }}-web-basic.tar.gz
 
-      # GitHub Pages 部署：需要 --base-href 指向仓库路径，与正式产物分开构建
-      - name: Build web for GitHub Pages
-        if: github.ref == 'refs/heads/main'
-        shell: bash
-        run: |
-          pushd flutter
-          flutter build web --release --base-href=/sundesk-web/
-          # 禁用 Flutter 半成品 UI，只保留 TS 精简 UI
-          sed -i '/flutter_bootstrap/d' build/web/index.html
-          popd
-
+      # GitHub Pages 部署（keep_files 默认 false：会清掉旧的 flutter 产物）
       - name: Deploy to GitHub Pages
         if: github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: flutter/build/web
+          publish_dir: site
           publish_branch: gh-pages
 
       - name: Publish release (on tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: flutter/build/sundesk-web-*.tar.gz
+          files: sundesk-web-${{ env.VERSION }}-web-basic.tar.gz
