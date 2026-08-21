@@ -161,6 +161,10 @@ if (app) {
   }
 
   window.connect = () => {
+    // 每次连接从头开始：复位密码框状态（连接中断时 flag 可能残留，
+    // 会抑制后续连接的首帧 msgbox，导致画面不显示只剩 cancel）
+    passwordPromptActive = false;
+    passwordPromptMode = 'password';
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     const host = document.querySelector('#host');
     localStorage.setItem('custom-rendezvous-server', host.value);
