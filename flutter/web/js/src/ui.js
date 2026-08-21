@@ -22,6 +22,7 @@ if (app) {
     <tr><td></td><td><button onclick="connect();">Connect</button></td></tr>
   </table></div>
   <div id="password" style="display: none;">
+    <div id="password-hint" style="color: red; font-weight: bold; margin-bottom: 6px;"></div>
     <input type="password" id="password" />
     <button id="confirm" onclick="confirm()">Confirm</button>
     <button id="cancel" onclick="cancel();">Cancel</button>
@@ -185,14 +186,22 @@ if (app) {
   let passwordPromptActive = false;
   function msgbox(type, title, text) {
     if (!globals.getConn()) return;
-    if (type == 'input-password') {
+    if (type == 'input-password' || type == 're-input-password') {
       passwordPromptActive = true;
+      if (type == 're-input-password') {
+        // 密码被拒重输：清空输入框并显示服务端错误信息
+        document.querySelector('input#password').value = '';
+        const hint = document.querySelector('#password-hint');
+        if (hint) hint.textContent = (title || text) ? (title + (text ? ' ' + text : '')) : '';
+      }
       document.querySelector('div#status').style.display = 'none';
       document.querySelector('div#password').style.display = 'block';
     } else if (!type) {
       // 首帧到达 = 连接真正成功（含人工审批无密码模式：空登录直接被接受）
       // 此时清掉密码框状态并显示画面，密码框只是"闪现"
       passwordPromptActive = false;
+      const hint = document.querySelector('#password-hint');
+      if (hint) hint.textContent = '';
       document.querySelector('div#canvas').style.display = 'block';
       document.querySelector('div#password').style.display = 'none';
       document.querySelector('div#status').style.display = 'none';
@@ -228,6 +237,8 @@ if (app) {
       window.cancel();
       return;
     }
+    const hint = document.querySelector('#password-hint');
+    if (hint) hint.textContent = '';
     const password = document.querySelector('input#password').value;
     if (password) {
       document.querySelector('div#password').style.display = 'none';
