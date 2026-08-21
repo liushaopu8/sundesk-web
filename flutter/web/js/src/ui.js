@@ -2,6 +2,15 @@ import "./style.css";
 import "./connection";
 import * as globals from "./globals";
 
+// JS 核心（globals.js/connection.ts）期望的全局回调，原由 Flutter host（web_model.dart）安装。
+// TS 精简 UI 独立运行时必须自己补上，否则连接成功后 pushEvent/onRgba 会抛 ReferenceError。
+// 交互事件已通过 conn.setMsgbox/setDraw 走本地回调，这里基本是 no-op + 调试日志。
+window.onGlobalEvent = (message) => {
+  console.debug('[sundesk] onGlobalEvent:', message);
+};
+window.onRgba = () => {}; // TS UI 用自带 YUVCanvas player 绘制，忽略核心的 rgba 通道
+window.onRegisteredEvent = () => {};
+
 const app = document.querySelector('#app');
 
 if (app) {
