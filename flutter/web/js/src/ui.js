@@ -189,7 +189,7 @@ if (app) {
   let passwordPromptActive = false;
   function msgbox(type, title, text) {
     if (!globals.getConn()) return;
-    if (type == 'input-password' || type == 're-input-password') {
+    if (type == 'input-password' || type == 're-input-password' || type == 'session-login-password') {
       passwordPromptActive = true;
       if (type == 're-input-password') {
         // 密码被拒重输：清空输入框并显示服务端错误信息
