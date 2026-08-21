@@ -9,10 +9,12 @@ import { decompress, mapKey, sleep } from "./common";
 
 export const PORT = 21116;
 const HOSTS = [
+  "172.16.1.31",
   "rs-sg.rustdesk.com",
   "rs-cn.rustdesk.com",
   "rs-us.rustdesk.com",
 ];
+const DEFAULT_KEY = "0xy+WlcTJWaO2bYTWlmecxKQquKXjNCWcCtrasaqLxU=";
 let HOST = localStorage.getItem("rendezvous-server") || HOSTS[0];
 const SCHEMA = "ws://";
 
@@ -91,7 +93,7 @@ export default class Connection {
     const nat_type = rendezvous.NatType.SYMMETRIC;
     const punch_hole_request = rendezvous.PunchHoleRequest.fromPartial({
       id,
-      licence_key: localStorage.getItem("key") || undefined,
+      licence_key: localStorage.getItem("key") || DEFAULT_KEY,
       conn_type,
       nat_type,
       token: localStorage.getItem("access_token") || undefined,
@@ -147,7 +149,7 @@ export default class Connection {
     console.log(new Date() + ": Connected to relay server");
     this._ws = ws;
     const request_relay = rendezvous.RequestRelay.fromPartial({
-      licence_key: localStorage.getItem("key") || undefined,
+      licence_key: localStorage.getItem("key") || DEFAULT_KEY,
       uuid,
     });
     ws.sendRendezvous({ request_relay });
@@ -158,9 +160,8 @@ export default class Connection {
 
   async secure(pk: Uint8Array | undefined) {
     if (pk) {
-      const RS_PK = "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=";
       try {
-        pk = await globals.verify(pk, localStorage.getItem("key") || RS_PK);
+        pk = await globals.verify(pk, localStorage.getItem("key") || DEFAULT_KEY);
         if (pk) {
           const idpk = message.IdPk.decode(pk);
           if (idpk.id == this._id) {
