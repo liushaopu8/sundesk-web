@@ -693,11 +693,11 @@ class RustdeskImpl {
   }
 
   Future<String> mainGetAppName({dynamic hint}) {
-    throw UnimplementedError();
+    return Future.value('RustDesk');
   }
 
   String mainGetAppNameSync({dynamic hint}) {
-    throw UnimplementedError();
+    return 'RustDesk';
   }
 
   String mainUriPrefixSync({dynamic hint}) {
@@ -817,7 +817,7 @@ class RustdeskImpl {
   }
 
   Future<String> mainGetMyId({dynamic hint}) {
-    throw UnimplementedError();
+    return Future.value('');
   }
 
   Future<String> mainGetUuid({dynamic hint}) {
@@ -1012,7 +1012,7 @@ class RustdeskImpl {
   }
 
   Future<String> mainGetSoftwareUpdateUrl({dynamic hint}) {
-    throw UnimplementedError();
+    return Future.value('');
   }
 
   Future<String> mainGetHomeDir({dynamic hint}) {
@@ -1353,7 +1353,7 @@ class RustdeskImpl {
   }
 
   String mainGetNewVersion({dynamic hint}) {
-    throw UnimplementedError();
+    return '';
   }
 
   bool mainUpdateMe({dynamic hint}) {
