@@ -240,16 +240,15 @@ export default class Connection {
       if (msg?.hash) {
         this._hash = msg?.hash;
         console.debug('[sundesk] got hash (salt+challenge), have password:', !!this._password);
-        if (this._password) {
-          // 有记住的密码：直接登录
-          this.login();
-        } else {
-          // 只弹密码框等用户输入，不自动发空登录。
-          // 上游逻辑会发空登录探测，但 Android kiosk 端收到空登录会回
-          // "password empty" 错误并关闭连接，导致用户输完密码时 ws 已死、
-          // 密码发不出去（Network 无请求）。
+        if (!this._password)
           this.msgbox("input-password", "Password Required", "");
-        }
+        // 恢复空登录探测（上游逻辑）：
+        // - 模式1（人工审批无密码）：空登录被接受 -> 首帧 -> 直接进画面（密码框闪现后消失）
+        // - 模式2（kiosk 密码）：空登录回 password empty -> 密码框保留等用户输入
+        // 之前误判空登录导致连接关闭（1005 是 rendezvous socket 的噪音，
+        // relay 一直活着），真正的坑是 login() 传参（字符串 vs 对象），
+        // 已在 ui.js confirm 修复（login({password})）。
+        this.login();
       } else if (msg?.test_delay) {
         const test_delay = msg?.test_delay;
         console.log('test delay: ', test_delay);
