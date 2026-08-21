@@ -61,15 +61,11 @@ if (app) {
     const func = async () => {
       const conn = globals.newConn();
       conn.setMsgbox(msgbox);
-      conn.setDraw((f) => {
-        /*
-        if (!(document.getElementById('player').width > 0)) {
-          document.getElementById('player').width = f.format.displayWidth;
-          document.getElementById('player').height = f.format.displayHeight;
-        }
-        */
-        globals.draw(f);
-        player.drawFrame(f);
+      conn.setDraw((display, frame) => {
+        // connection.draw() 已调用 globals.draw(display, frame) 处理解码/缩放，
+        // 这里只把帧画到可见的 player canvas；回调签名是 (display, frame)，
+        // 不能只收第一个参数（否则 frame 丢失 → drawFrame(undefined) 崩溃）。
+        player.drawFrame(frame);
       });
       document.querySelector('div#status').style.display = 'block';
       document.querySelector('div#connect').style.display = 'none';
