@@ -21,7 +21,7 @@ jobs:
       - name: Prepare env
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y wget npm python3
+          sudo apt-get install -y wget npm python3 zip
 
       # 不再使用 flutter build：flutter 复制静态资源时尊重 .gitignore，
       # 会过滤掉 vite 产物（js/dist）和 web_deps（ogvjs*/yuv-canvas*/libopus*），
@@ -53,16 +53,18 @@ jobs:
           cp flutter/web/yuv.js flutter/web/yuv.wasm flutter/web/favicon.svg site/
           ls -la site/
 
-      - name: Package artifact
+      - name: Package artifact (zip, single folder)
         run: |
-          tar czf sundesk-web-${{ env.VERSION }}-web-basic.tar.gz site
-          sha256sum sundesk-web-${{ env.VERSION }}-web-basic.tar.gz
+          mkdir -p pkg/sundesk-web
+          cp -r site/* pkg/sundesk-web/
+          cd pkg && zip -r ../sundesk-web-${{ env.VERSION }}-web-basic.zip sundesk-web
+          cd .. && sha256sum sundesk-web-${{ env.VERSION }}-web-basic.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: sundesk-web-${{ env.VERSION }}
-          path: sundesk-web-${{ env.VERSION }}-web-basic.tar.gz
+          path: sundesk-web-${{ env.VERSION }}-web-basic.zip
 
       # GitHub Pages 部署已停用（2026-08-21）：Pages 是 https，浏览器强制 wss://，
       # 本地 rustdesk-server 的 hbbs/hbbr 是明文 ws，无 TLS 反代连不上。
@@ -79,4 +81,4 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: sundesk-web-${{ env.VERSION }}-web-basic.tar.gz
+          files: sundesk-web-${{ env.VERSION }}-web-basic.zip
