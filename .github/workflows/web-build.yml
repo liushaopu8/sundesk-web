@@ -39,9 +39,7 @@ jobs:
           npm install yarn -g
           npm install typescript -g
           npm install protoc -g
-          npm install ts-proto
-          # Only works with vite <= 2.8, see: https://github.com/vitejs/vite/blob/main/docs/guide/build.md#chunking-strategy
-          npm install vite@2.8
+          # ts-proto/vite 已声明在 package.json，勿用 npm 单独安装（会重写依赖树导致版本漂移）
           yarn install && yarn build
           popd
 
