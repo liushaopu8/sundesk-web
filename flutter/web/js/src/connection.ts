@@ -240,9 +240,16 @@ export default class Connection {
       if (msg?.hash) {
         this._hash = msg?.hash;
         console.debug('[sundesk] got hash (salt+challenge), have password:', !!this._password);
-        if (!this._password)
+        if (this._password) {
+          // 有记住的密码：直接登录
+          this.login();
+        } else {
+          // 只弹密码框等用户输入，不自动发空登录。
+          // 上游逻辑会发空登录探测，但 Android kiosk 端收到空登录会回
+          // "password empty" 错误并关闭连接，导致用户输完密码时 ws 已死、
+          // 密码发不出去（Network 无请求）。
           this.msgbox("input-password", "Password Required", "");
-        this.login();
+        }
       } else if (msg?.test_delay) {
         const test_delay = msg?.test_delay;
         console.log('test delay: ', test_delay);
