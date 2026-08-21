@@ -23,7 +23,10 @@ if (app) {
   </table></div>
   <div id="password" style="display: none;">
     <div id="password-hint" style="color: red; font-weight: bold; margin-bottom: 6px;"></div>
-    <input type="password" id="password" />
+    <div style="display: flex; align-items: center; justify-content: center; gap: 6px;">
+      <input type="password" id="password" style="flex: 1;" />
+      <button id="toggle-password" type="button" onclick="togglePassword()" style="cursor: pointer; padding: 4px 8px;">👁</button>
+    </div>
     <button id="confirm" onclick="confirm()">Confirm</button>
     <button id="cancel" onclick="cancel();">Cancel</button>
   </div>
@@ -219,6 +222,15 @@ if (app) {
       document.querySelector('div#status').style.display = 'block';
       document.querySelector('div#text').innerHTML = '<div style="font-weight: bold;">' + text + '</div>';
     }
+  }
+
+  window.togglePassword = () => {
+    const input = document.querySelector('input#password');
+    const btn = document.querySelector('#toggle-password');
+    if (!input || !btn) return;
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.textContent = show ? '🙈' : '👁';
   }
 
   window.cancel = () => {
