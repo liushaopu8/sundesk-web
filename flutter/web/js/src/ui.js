@@ -180,11 +180,17 @@ if (app) {
     func();
   }
 
+  let passwordPromptActive = false;
   function msgbox(type, title, text) {
     if (!globals.getConn()) return;
     if (type == 'input-password') {
+      passwordPromptActive = true;
       document.querySelector('div#status').style.display = 'none';
       document.querySelector('div#password').style.display = 'block';
+    } else if (passwordPromptActive) {
+      // 密码确认框激活期间，忽略 connecting/首帧等消息，防止密码框被顶掉
+      console.debug('[sundesk] msgbox suppressed (password prompt active):', type, title, text);
+      return;
     } else if (!type) {
       document.querySelector('div#canvas').style.display = 'block';
       document.querySelector('div#password').style.display = 'none';
@@ -201,6 +207,7 @@ if (app) {
   }
 
   window.cancel = () => {
+    passwordPromptActive = false;
     globals.close();
     document.querySelector('div#connect').style.display = 'block';
     document.querySelector('div#password').style.display = 'none';
@@ -209,6 +216,7 @@ if (app) {
   }
 
   window.confirm = () => {
+    passwordPromptActive = false;
     const password = document.querySelector('input#password').value;
     if (password) {
       document.querySelector('div#password').style.display = 'none';
