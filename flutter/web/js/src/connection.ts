@@ -239,6 +239,7 @@ export default class Connection {
       const msg = (await this._ws?.next()) as message.Message;
       if (msg?.hash) {
         this._hash = msg?.hash;
+        console.debug('[sundesk] got hash (salt+challenge), have password:', !!this._password);
         if (!this._password)
           this.msgbox("input-password", "Password Required", "");
         this.login();
@@ -307,6 +308,7 @@ export default class Connection {
   }
 
   handleLoginResponse(response: message.LoginResponse) {
+    console.debug('[sundesk] login_response, error =', response.error);
     const loginErrorMap: Record<string, any> = {
       [consts.LOGIN_SCREEN_WAYLAND]: {
         msgtype: "error",
@@ -436,6 +438,7 @@ export default class Connection {
     os_login?: message.OSLogin,
     password?: Uint8Array
   }) {
+    console.debug('[sundesk] login() called, has password input:', !!info?.password, ', stored password:', !!this._password);
     if (info?.password) {
       const salt = this._hash?.salt;
       let p = hash([info.password, salt!]);
@@ -572,6 +575,7 @@ export default class Connection {
       this.msgbox("error", "Remote Error", "No Display");
       return;
     }
+    console.debug('[sundesk] login OK, waiting for first frame');
     this.msgbox("success", "Successful", "Connected, waiting for image...");
     globals.pushEvent("peer_info", pi);
     const p = this.shouldAutoLogin();
