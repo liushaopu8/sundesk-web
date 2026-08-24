@@ -34,15 +34,19 @@ window.onRegisteredEvent = () => {};
 if (app) {
   app.innerHTML = `
   <div id="connect" style="text-align: center">
-    <div style="margin-bottom: 12px;">
-      <label style="margin-right: 12px; cursor: pointer;"><input type="radio" name="mode" value="remote" checked /> 远程桌面</label>
-      <label style="cursor: pointer;"><input type="radio" name="mode" value="file" /> 文件传输</label>
-    </div>
     <table style="display: inline-block">
     <tr><td><span>Host: </span></td><td><input id="host" /></td></tr>
     <tr><td><span>Key: </span></td><td><input id="key" /></td></tr>
     <tr><td><span>Id: </span></td><td><input id="id" /></td></tr>
-    <tr><td></td><td><button onclick="connect();">Connect</button></td></tr>
+    <tr><td></td><td style="padding-top: 8px;">
+      <div class="connect-split">
+        <button id="connect-btn" onclick="connect();">连接</button>
+        <button id="mode-toggle" onclick="toggleModeDropdown(event)" title="更多连接方式" aria-label="更多连接方式">▾</button>
+        <div id="mode-dropdown" style="display: none;">
+          <div class="mode-opt" onclick="connect('file')">文件传输</div>
+        </div>
+      </div>
+    </td></tr>
   </table></div>
   <div id="password" style="display: none;">
     <div id="password-hint" style="color: red; font-weight: bold; margin-bottom: 6px;"></div>
@@ -257,7 +261,7 @@ if (app) {
     });
   }
 
-  window.connect = () => {
+  window.connect = (mode) => {
     // 每次连接从头开始：复位密码框状态（连接中断时 flag 可能残留，会抑制后续连接的首帧）
     passwordPromptActive = false;
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
@@ -267,9 +271,8 @@ if (app) {
     localStorage.setItem('id', id.value);
     const key = document.querySelector('#key');
     localStorage.setItem('key', key.value);
-    const modeRadio = document.querySelector('input[name=mode]:checked');
-    const mode = modeRadio ? modeRadio.value : 'remote';
-    currentMode = mode;
+    // 连接模式：主按钮默认远程控制；下拉项传 'file' 走文件传输（甫总 2026-08-24）
+    currentMode = mode || 'remote';
     const func = async () => {
       const conn = globals.newConn();
       conn.setMsgbox(msgbox);
@@ -286,6 +289,20 @@ if (app) {
   // ============ 文件传输 UI（step3：本地 | 远程 | 传输中 三栏） ============
   let currentMode = 'remote';
   let passwordPromptActive = false;
+
+  // ---- 连接方式下拉（甫总 2026-08-24）：默认=远程控制；下拉=文件传输（后续扩展） ----
+  window.toggleModeDropdown = (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const dd = document.querySelector('#mode-dropdown');
+    if (dd) dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+  };
+  document.addEventListener('click', (e) => {
+    // 点击下拉外部时关闭
+    const dd = document.querySelector('#mode-dropdown');
+    if (dd && dd.style.display !== 'none' && e.target && !e.target.closest('.connect-split')) {
+      dd.style.display = 'none';
+    }
+  });
 
   // ---- 通用工具 ----
   function fmtSize(n) {

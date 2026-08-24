@@ -176,6 +176,66 @@
   background: #f8fafc;
   min-height: 22px;
 }
+/* 连接按钮 + 模式下拉（split button） */
+.connect-split {
+  position: relative;
+  display: inline-flex;
+  gap: 0;
+  margin: 0 auto;
+}
+.connect-split #connect-btn {
+  height: 36px;
+  padding: 8px 14px;
+  font-size: 14px;
+  border: 1px solid #024eff;
+  border-radius: 6px 0 0 6px;
+  background: #024eff;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.connect-split #connect-btn:hover {
+  background: #1d5cff;
+}
+.connect-split #mode-toggle {
+  height: 36px;
+  width: 36px;
+  border: 1px solid #024eff;
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  background: #024eff;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+}
+.connect-split #mode-toggle:hover {
+  background: #1d5cff;
+}
+#mode-dropdown {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  min-width: 130px;
+  overflow: hidden;
+}
+#mode-dropdown .mode-opt {
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #0f172a;
+  text-align: left;
+}
+#mode-dropdown .mode-opt:hover {
+  background: #eef2ff;
+  color: #024eff;
+}
 /* 传输栏 */
 #fm-transfers-pane {
   min-height: 120px;
