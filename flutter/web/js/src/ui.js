@@ -1,6 +1,7 @@
 import "./style.css";
 import "./connection";
 import * as globals from "./globals";
+import * as localfs from "./localfs";
 
 // JS 核心（globals.js/connection.ts）期望的全局回调，原由 Flutter host（web_model.dart）安装。
 // TS 精简 UI 独立运行时必须自己补上，否则连接成功后 pushEvent/onRgba 会抛 ReferenceError。
@@ -44,30 +45,78 @@ if (app) {
     <canvas id="player"></canvas>
     <canvas id="test-yuv-decoder-canvas"></canvas>
   </div>
-  <div id="filemgr" style="display: none; text-align: left; max-width: 900px; margin: 0 auto;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-      <div style="font-weight:bold;">📁 文件传输 - <span id="filemgr-id"></span></div>
+  <div id="filemgr" style="display: none; text-align: left; max-width: 1440px; margin: 0 auto;">
+    <div class="fm-head">
+      <div style="font-weight: bold;">文件传输 - <span id="filemgr-id"></span></div>
       <div><button onclick="cancel();">断开</button></div>
     </div>
-    <div id="filemgr-toolbar" style="margin-bottom:6px;">
-      <button onclick="fmGoUp()">↑ 上级</button>
-      <button onclick="fmHome()">首页</button>
-      <button onclick="fmRefresh()">刷新</button>
-      <button onclick="fmMkdir()">新建文件夹</button>
-      <label style="margin-left:8px;cursor:pointer;"><input type="checkbox" id="fm-hidden" onchange="fmRefresh()" /> 显示隐藏</label>
+    <div class="fm-grid">
+      <!-- 本地栏 -->
+      <div class="fm-pane">
+        <div class="fm-pane-title">本地计算机</div>
+        <div class="fm-toolbar">
+          <button onclick="locBack()" title="返回上一级">返回</button>
+          <button onclick="locUp()" title="父目录">父目录</button>
+          <button onclick="locHome()" title="默认目录（授权文件夹）">默认目录</button>
+          <input type="search" id="loc-search" placeholder="搜索" oninput="locApplyFilter()" />
+          <button onclick="locRefresh()" title="刷新">刷新</button>
+        </div>
+        <div class="fm-actions">
+          <button onclick="locPick()" title="授权本地文件夹（Chrome/Edge）">选择文件夹</button>
+          <button onclick="locMkdir()" title="新建文件夹">新建</button>
+          <button onclick="locDelete()" title="删除所选">删除</button>
+          <button onclick="locToggleSelectAll()" title="全选/取消全选">全选</button>
+          <label class="fm-hidden"><input type="checkbox" id="loc-hidden" onchange="locRefresh()" /> 显示隐藏</label>
+          <button class="fm-primary" onclick="locSend()" title="上传所选到远程当前目录">发送 →</button>
+        </div>
+        <div class="fm-crumb" id="loc-crumb"></div>
+        <table class="fm-list">
+          <thead><tr>
+            <th class="fm-cb"></th>
+            <th class="fm-sortable" data-sort="name" onclick="locSort('name')">名称</th>
+            <th class="fm-sortable" data-sort="mt" onclick="locSort('mt')">修改时间</th>
+            <th class="fm-sortable fm-num" data-sort="size" onclick="locSort('size')">大小</th>
+          </tr></thead>
+          <tbody id="loc-list"></tbody>
+        </table>
+        <div class="fm-status" id="loc-status"></div>
+      </div>
+      <!-- 远程栏 -->
+      <div class="fm-pane">
+        <div class="fm-pane-title">远程计算机</div>
+        <div class="fm-toolbar">
+          <button onclick="fmBack()" title="返回上一级">返回</button>
+          <button onclick="fmUp()" title="父目录">父目录</button>
+          <button onclick="fmHome()" title="默认目录">默认目录</button>
+          <input type="search" id="fm-search" placeholder="搜索" oninput="fmApplyFilter()" />
+          <button onclick="fmRefresh()" title="刷新">刷新</button>
+        </div>
+        <div class="fm-actions">
+          <button class="fm-primary" onclick="fmReceive()" title="下载所选到本地">← 接收</button>
+          <button onclick="fmHome()" title="默认目录">默认目录</button>
+          <button onclick="fmMkdir()" title="新建文件夹">新建</button>
+          <button onclick="fmDelete()" title="删除所选">删除</button>
+          <button onclick="fmToggleSelectAll()" title="全选/取消全选">全选</button>
+          <label class="fm-hidden"><input type="checkbox" id="fm-hidden" onchange="fmRefresh()" /> 显示隐藏</label>
+        </div>
+        <div class="fm-crumb" id="fm-crumb"></div>
+        <table class="fm-list">
+          <thead><tr>
+            <th class="fm-cb"></th>
+            <th class="fm-sortable" data-sort="name" onclick="fmSort('name')">名称</th>
+            <th class="fm-sortable" data-sort="mt" onclick="fmSort('mt')">修改时间</th>
+            <th class="fm-sortable fm-num" data-sort="size" onclick="fmSort('size')">大小</th>
+          </tr></thead>
+          <tbody id="fm-list"></tbody>
+        </table>
+        <div class="fm-status" id="fm-status"></div>
+      </div>
+      <!-- 传输栏（仅传输时显示） -->
+      <div class="fm-pane" id="fm-transfers-pane" style="display: none;">
+        <div class="fm-pane-title">传输中</div>
+        <div id="filemgr-transfers"></div>
+      </div>
     </div>
-    <div id="filemgr-crumb" style="padding:4px 8px; background:#f5f5f5; border:1px solid #ddd; font-family:monospace; font-size:12px; word-break:break-all;"></div>
-    <table id="filemgr-list" style="width:100%; border-collapse:collapse; font-size:13px;">
-      <thead><tr style="background:#f0f0f0;">
-        <th style="text-align:left; padding:4px 8px; border-bottom:1px solid #ddd;">名称</th>
-        <th style="text-align:right; padding:4px 8px; border-bottom:1px solid #ddd;">大小</th>
-        <th style="text-align:left; padding:4px 8px; border-bottom:1px solid #ddd;">修改时间</th>
-        <th style="text-align:center; padding:4px 8px; border-bottom:1px solid #ddd;">操作</th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
-    <div id="filemgr-transfers" style="margin-top:10px;"></div>
-    <div id="filemgr-status" style="margin-top:6px; color:#666; font-size:12px;"></div>
   </div>
 `;
 
@@ -173,7 +222,7 @@ if (app) {
       window.setByName('send_mouse', msg);
     });
 
-    // 键盘：输入框聚焦时（填 Host/Key/Id）不转发
+    // 键盘：输入框聚焦时（填 Host/Key/Id/搜索框）不转发
     const isInput = (e) => e.target && e.target.tagName === 'INPUT';
     document.addEventListener('keydown', (e) => {
       if (isInput(e)) return;
@@ -220,11 +269,11 @@ if (app) {
     func();
   }
 
-  // ============ 文件传输 UI ============
+  // ============ 文件传输 UI（step3：本地 | 远程 | 传输中 三栏） ============
   let currentMode = 'remote';
-  let fmPath = '';          // 当前远程路径
-  let fmEntries = [];       // 当前目录条目
+  let passwordPromptActive = false;
 
+  // ---- 通用工具 ----
   function fmtSize(n) {
     if (n === undefined || n === null) return '';
     if (n < 1024) return n + ' B';
@@ -236,28 +285,63 @@ if (app) {
     if (!t) return '';
     try { return new Date(t * 1000).toLocaleString(); } catch (e) { return ''; }
   }
+  function isDir(e) { return e.entry_type === 0 || e.entry_type === 2 || e.entry_type === 3; }
+  function fmJoin(dir, name) {
+    if (!dir) return '/' + name;
+    const sep = dir.includes('\\') ? '\\' : '/';
+    if (dir.endsWith(sep)) return dir + name;
+    return dir + sep + name;
+  }
+  function parentPath(p) {
+    if (!p || p === '/') return null;
+    const sep = p.includes('\\') ? '\\' : '/';
+    const t = p.replace(/[\\/]+$/, '');
+    const idx = t.lastIndexOf(sep);
+    return idx <= 0 ? sep : t.substring(0, idx);
+  }
+
+  // ---- 远程栏状态 ----
+  let fmPath = '';           // 当前远程路径（首次加载根后为绝对路径）
+  let fmEntries = [];        // 当前目录条目（原始）
+  let fmFiltered = [];       // 搜索过滤后的条目
+  let fmSelected = new Set(); // 选中的名称
+  let fmSortKey = 'name', fmSortDesc = false;
+  let fmHistory = [];        // 返回历史
+
   function fmSetStatus(s) {
-    const el = document.querySelector('#filemgr-status');
+    const el = document.querySelector('#fm-status');
     if (el) el.textContent = s;
   }
-  function isDir(e) { return e.entry_type === 0 || e.entry_type === 2 || e.entry_type === 3; }
+  function fmApplyFilter() {
+    const q = (document.querySelector('#fm-search')?.value || '').trim().toLowerCase();
+    fmFiltered = q ? fmEntries.filter(e => e.name.toLowerCase().includes(q)) : fmEntries.slice();
+    fmRender();
+  }
+  function fmSorted() {
+    const arr = fmFiltered.slice();
+    arr.sort((a, b) => {
+      const da = isDir(a) ? 0 : 1, db = isDir(b) ? 0 : 1;
+      if (da !== db) return da - db;
+      let r;
+      if (fmSortKey === 'size') r = (a.size || 0) - (b.size || 0);
+      else if (fmSortKey === 'mt') r = (a.modified_time || 0) - (b.modified_time || 0);
+      else r = a.name.localeCompare(b.name);
+      return fmSortDesc ? -r : r;
+    });
+    return arr;
+  }
 
-  async function fmLoad(path) {
+  async function fmLoad(path, pushHistory = true) {
     const conn = globals.getConn();
     if (!conn) return;
+    if (pushHistory && fmPath) fmHistory.push(fmPath);
     const showHidden = document.querySelector('#fm-hidden')?.checked;
     fmSetStatus('读取目录中…');
     try {
       const dir = await conn.readRemoteDir(path, !!showHidden);
       fmPath = dir.path || path;
       fmEntries = (dir.entries || []).slice();
-      // 目录在前，文件在后；各自按名称排序
-      fmEntries.sort((a, b) => {
-        const da = isDir(a) ? 0 : 1, db = isDir(b) ? 0 : 1;
-        if (da !== db) return da - db;
-        return a.name.localeCompare(b.name);
-      });
-      fmRender();
+      fmApplyFilter();
       fmSetStatus(fmEntries.length + ' 项');
     } catch (e) {
       fmSetStatus('读取失败: ' + (e?.message || e));
@@ -265,111 +349,402 @@ if (app) {
   }
 
   function fmRender() {
-    document.querySelector('#filemgr-crumb').textContent = fmPath || '/';
-    const tbody = document.querySelector('#filemgr-list tbody');
+    document.querySelector('#fm-crumb').textContent = fmPath || '/';
+    const tbody = document.querySelector('#fm-list');
     tbody.innerHTML = '';
-    // 非根目录显示“..”
-    if (fmPath && fmPath !== '/' && fmPath !== '') {
+    const rows = fmSorted();
+    if (!rows.length) {
       const tr = document.createElement('tr');
-      tr.style.cursor = 'pointer';
-      tr.innerHTML = '<td style="padding:4px 8px;">📁 ..</td><td></td><td></td>';
-      tr.onclick = () => fmGoUp();
+      const td = document.createElement('td');
+      td.colSpan = 4;
+      td.textContent = '（空目录）';
+      td.style.cssText = 'color:#94a3b8; text-align:center; padding:16px;';
+      tr.appendChild(td);
       tbody.appendChild(tr);
+      return;
     }
-    for (const e of fmEntries) {
+    for (const e of rows) {
       const tr = document.createElement('tr');
       tr.style.cursor = 'pointer';
-      tr.onmouseover = () => tr.style.background = '#f5f5f5';
-      tr.onmouseout = () => tr.style.background = '';
-      const icon = isDir(e) ? '📁' : '📄';
-      let actionCell;
+      const cb = document.createElement('td');
+      cb.className = 'fm-cb';
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.checked = fmSelected.has(e.name);
+      chk.onclick = (ev) => ev.stopPropagation();
+      chk.onchange = () => {
+        if (chk.checked) fmSelected.add(e.name); else fmSelected.delete(e.name);
+        fmRender();
+      };
+      cb.appendChild(chk);
+      const tdName = document.createElement('td');
+      const icon = isDir(e)
+        ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> '
+        : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> ';
+      tdName.innerHTML = icon;
+      tdName.appendChild(document.createTextNode(e.name));
+      tdName.style.cssText = 'word-break: break-all;';
+      const tdMt = document.createElement('td');
+      tdMt.className = 'fm-muted';
+      tdMt.textContent = fmtTime(e.modified_time);
+      const tdSize = document.createElement('td');
+      tdSize.className = 'fm-muted fm-num';
+      tdSize.textContent = isDir(e) ? '' : fmtSize(e.size);
       if (isDir(e)) {
-        actionCell = '<td style="padding:4px 8px;text-align:center;color:#999;">—</td>';
-        tr.ondblclick = tr.onclick = () => fmOpen(e.name);
-      } else {
-        actionCell = '<td style="padding:4px 8px;text-align:center;"><button data-download="' + encodeURIComponent(e.name) + '" style="padding:2px 8px;cursor:pointer;">下载</button></td>';
+        tr.ondblclick = () => fmOpen(e.name);
+        tr.onclick = () => fmOpen(e.name);
       }
-      tr.innerHTML =
-        '<td style="padding:4px 8px;">' + icon + ' ' + e.name + '</td>' +
-        '<td style="padding:4px 8px; text-align:right;">' + (isDir(e) ? '' : fmtSize(e.size)) + '</td>' +
-        '<td style="padding:4px 8px; color:#666;">' + fmtTime(e.modified_time) + '</td>' +
-        actionCell;
+      tr.appendChild(cb);
+      tr.appendChild(tdName);
+      tr.appendChild(tdMt);
+      tr.appendChild(tdSize);
       tbody.appendChild(tr);
     }
-    // 下载按钮事件委托（避免内联 onclick 转义问题）
-    tbody.querySelectorAll('button[data-download]').forEach(btn => {
-      btn.onclick = (ev) => { ev.stopPropagation(); fmDownload(decodeURIComponent(btn.getAttribute('data-download'))); };
-    });
   }
 
-  function fmJoin(dir, name) {
-    if (!dir) return '/' + name;
-    const sep = dir.includes('\\') ? '\\' : '/';
-    if (dir.endsWith(sep)) return dir + name;
-    return dir + sep + name;
-  }
   function fmOpen(name) { fmLoad(fmJoin(fmPath, name)); }
-  window.fmGoUp = () => {
-    if (!fmPath || fmPath === '/') return;
-    const sep = fmPath.includes('\\') ? '\\' : '/';
-    let p = fmPath.replace(/[\\/]+$/, '');
-    const idx = p.lastIndexOf(sep);
-    const parent = idx <= 0 ? sep : p.substring(0, idx);
-    fmLoad(parent);
+  window.fmBack = () => {
+    const prev = fmHistory.pop();
+    if (prev !== undefined) fmLoad(prev, false);
+  };
+  window.fmUp = () => {
+    const p = parentPath(fmPath);
+    if (p !== null) fmLoad(p);
   };
   window.fmHome = () => fmLoad('');
-  window.fmRefresh = () => fmLoad(fmPath);
+  window.fmRefresh = () => fmLoad(fmPath, false);
+  window.fmSort = (k) => {
+    if (fmSortKey === k) fmSortDesc = !fmSortDesc;
+    else { fmSortKey = k; fmSortDesc = false; }
+    fmRender();
+  };
   window.fmMkdir = () => {
     const name = prompt('新建文件夹名称:');
     if (!name) return;
     const conn = globals.getConn();
     if (!conn) return;
     conn.createRemoteDir(fmJoin(fmPath, name));
+    fmSetStatus('创建中…');
     setTimeout(fmRefresh, 500);
   };
-
-  // 文件传输会话连接成功后加载根目录；block/error/done 先打日志（下一步做上传/下载）
-  function onFileResponse(fr) {
-    if (fr.block) console.debug('[sundesk] file block', fr.block.id, fr.block.file_num, fr.block.data?.length);
-    if (fr.error) console.warn('[sundesk] file error', fr.error);
-    if (fr.done) console.debug('[sundesk] file done', fr.done);
-    if (fr.digest) console.debug('[sundesk] file digest', fr.digest);
-  }
-
-  // ---- 下载（远程→浏览器）----
-  window.fmDownload = (name) => {
+  window.fmToggleSelectAll = () => {
+    const all = fmSorted();
+    const allSelected = all.length > 0 && all.every(e => fmSelected.has(e.name));
+    if (allSelected) {
+      all.forEach(e => fmSelected.delete(e.name));
+    } else {
+      all.forEach(e => fmSelected.add(e.name));
+    }
+    fmRender();
+  };
+  window.fmDelete = () => {
+    if (!fmSelected.size) { fmSetStatus('未选择任何条目'); return; }
+    const n = fmSelected.size;
+    if (!confirm('确定删除远程的 ' + n + ' 个条目？（目录递归删除，不可恢复）')) return;
     const conn = globals.getConn();
     if (!conn) return;
-    const remotePath = fmJoin(fmPath, name);
-    fmSetStatus('请求下载: ' + name);
-    const { id, promise } = conn.downloadRemotePath(remotePath);
-    const panel = ensureTransferRow(id, name);
-    // 进度回调
-    conn.onDownloadProgress = (jobId, fileName, received, total) => {
-      if (jobId !== id) return;
-      updateTransferRow(id, fileName, received, total);
-    };
-    promise.then(() => {
-      finishTransferRow(id, name, true);
-      fmSetStatus('下载完成: ' + name);
-      fmRefresh();
-    }).catch((e) => {
-      finishTransferRow(id, name, false, e?.message || String(e));
-      fmSetStatus('下载失败: ' + name + ' - ' + (e?.message || e));
+    fmSelected.forEach(name => {
+      const e = fmEntries.find(x => x.name === name);
+      if (e) conn.removeRemotePath(fmJoin(fmPath, name), isDir(e), true);
+    });
+    fmSelected.clear();
+    fmSetStatus('删除中…');
+    setTimeout(fmRefresh, 600);
+  };
+  window.fmReceive = () => {
+    const conn = globals.getConn();
+    if (!conn) return;
+    if (!fmSelected.size) { fmSetStatus('未选择任何条目'); return; }
+    fmSelected.forEach(name => {
+      const full = fmJoin(fmPath, name);
+      const { id, promise } = conn.downloadRemotePath(full);
+      const row = ensureTransferRow(id, name, 'down');
+      row.dataset.target = full;
+      promise.then(() => {
+        finishTransferRow(id, name, true);
+        fmSetStatus('下载完成: ' + name);
+      }).catch((e) => {
+        finishTransferRow(id, name, false, e?.message || String(e));
+        fmSetStatus('下载失败: ' + name + ' - ' + (e?.message || e));
+      });
     });
   };
 
-  function ensureTransferRow(id, name) {
-    let wrap = document.querySelector('#filemgr-transfers');
+  // ---- 本地栏状态 ----
+  let locHandle = null;     // 授权目录句柄
+  let locPath = [];         // 当前路径（根目录下的 name 数组）
+  let locEntries = [];
+  let locFiltered = [];
+  let locSelected = new Set();
+  let locSortKey = 'name', locSortDesc = false;
+  let locHistory = [];
+
+  function locSetStatus(s) {
+    const el = document.querySelector('#loc-status');
+    if (el) el.textContent = s;
+  }
+  function locCrumb() {
+    return (locHandle ? '本地: ' : '') + (locPath.length ? locPath.join('/') : '(根目录)');
+  }
+  function locApplyFilter() {
+    const q = (document.querySelector('#loc-search')?.value || '').trim().toLowerCase();
+    locFiltered = q ? locEntries.filter(e => e.name.toLowerCase().includes(q)) : locEntries.slice();
+    locRender();
+  }
+  function locSorted() {
+    const arr = locFiltered.slice();
+    arr.sort((a, b) => {
+      const da = a.kind === 'dir' ? 0 : 1, db = b.kind === 'dir' ? 0 : 1;
+      if (da !== db) return da - db;
+      let r;
+      if (locSortKey === 'size') r = (a.size || 0) - (b.size || 0);
+      else if (locSortKey === 'mt') r = (a.modifiedTime || 0) - (b.modifiedTime || 0);
+      else r = a.name.localeCompare(b.name);
+      return locSortDesc ? -r : r;
+    });
+    return arr;
+  }
+
+  async function locRefresh() {
+    if (!locHandle) { locSetStatus('未授权本地目录，点击「选择文件夹」'); locRender(); return; }
+    locSetStatus('读取中…');
+    try {
+      const entries = await localfs.listDir(locHandle, locPath);
+      locEntries = entries;
+      locApplyFilter();
+      locSetStatus(locEntries.length + ' 项');
+    } catch (e) {
+      locSetStatus('读取失败: ' + (e?.message || e));
+    }
+  }
+
+  function locRender() {
+    document.querySelector('#loc-crumb').textContent = locCrumb();
+    const tbody = document.querySelector('#loc-list');
+    tbody.innerHTML = '';
+    if (!locHandle) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 4;
+      td.textContent = localfs.isLocalFSSupported()
+        ? '点击「选择文件夹」授权后即可浏览/管理本地目录'
+        : '当前浏览器不支持本地目录浏览（需 Chrome/Edge），发送请用文件选择';
+      td.style.cssText = 'color:#94a3b8; text-align:center; padding:16px;';
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+    const rows = locSorted();
+    if (!rows.length) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 4;
+      td.textContent = '（空目录）';
+      td.style.cssText = 'color:#94a3b8; text-align:center; padding:16px;';
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+    for (const e of rows) {
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      const cb = document.createElement('td');
+      cb.className = 'fm-cb';
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.checked = locSelected.has(e.name);
+      chk.onclick = (ev) => ev.stopPropagation();
+      chk.onchange = () => {
+        if (chk.checked) locSelected.add(e.name); else locSelected.delete(e.name);
+        locRender();
+      };
+      cb.appendChild(chk);
+      const tdName = document.createElement('td');
+      const icon = e.kind === 'dir'
+        ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> '
+        : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> ';
+      tdName.innerHTML = icon;
+      tdName.appendChild(document.createTextNode(e.name));
+      tdName.style.cssText = 'word-break: break-all;';
+      const tdMt = document.createElement('td');
+      tdMt.className = 'fm-muted';
+      tdMt.textContent = fmtTime(e.modifiedTime);
+      const tdSize = document.createElement('td');
+      tdSize.className = 'fm-muted fm-num';
+      tdSize.textContent = e.kind === 'dir' ? '' : fmtSize(e.size);
+      if (e.kind === 'dir') {
+        tr.ondblclick = () => locOpen(e.name);
+        tr.onclick = () => locOpen(e.name);
+      }
+      tr.appendChild(cb);
+      tr.appendChild(tdName);
+      tr.appendChild(tdMt);
+      tr.appendChild(tdSize);
+      tbody.appendChild(tr);
+    }
+  }
+
+  function locOpen(name) {
+    if (locHistory[locHistory.length - 1]?.join('/') !== locPath.join('/')) {
+      locHistory.push(locPath.slice());
+    }
+    locPath.push(name);
+    locSelected.clear();
+    locRefresh();
+  }
+  window.locPick = async () => {
+    if (!localfs.isLocalFSSupported()) {
+      locSetStatus('当前浏览器不支持（需 Chrome/Edge），发送请直接用文件选择');
+      return;
+    }
+    locSetStatus('等待授权…');
+    const ok = await localfs.pickRootDir();
+    if (!ok) { locSetStatus('未选择目录或授权失败'); return; }
+    locHandle = await localfs.getRootHandle();
+    locPath = [];
+    locSelected.clear();
+    locHistory = [];
+    locRefresh();
+  };
+  window.locHome = async () => {
+    if (!locHandle) { locPick(); return; }
+    locPath = [];
+    locSelected.clear();
+    locRefresh();
+  };
+  window.locBack = () => {
+    const prev = locHistory.pop();
+    if (prev) { locPath = prev; locSelected.clear(); locRefresh(); }
+  };
+  window.locUp = () => {
+    if (!locPath.length) return;
+    locPath.pop();
+    locSelected.clear();
+    locRefresh();
+  };
+  window.locRefresh = () => locRefresh();
+  window.locApplyFilter = () => locApplyFilter();
+  window.fmApplyFilter = () => fmApplyFilter();
+  window.locSort = (k) => {
+    if (locSortKey === k) locSortDesc = !locSortDesc;
+    else { locSortKey = k; locSortDesc = false; }
+    locRender();
+  };
+  window.locMkdir = async () => {
+    if (!locHandle) { locSetStatus('请先选择本地文件夹'); return; }
+    const name = prompt('新建文件夹名称:');
+    if (!name) return;
+    const ok = await localfs.mkdir(locHandle, locPath, name);
+    locSetStatus(ok ? '已创建' : '创建失败（重名或无权限）');
+    if (ok) setTimeout(locRefresh, 300);
+  };
+  window.locDelete = async () => {
+    if (!locHandle) { locSetStatus('请先选择本地文件夹'); return; }
+    if (!locSelected.size) { locSetStatus('未选择任何条目'); return; }
+    const n = locSelected.size;
+    if (!confirm('确定删除本地的 ' + n + ' 个条目？（目录递归删除，不可恢复）')) return;
+    let okAll = true;
+    for (const name of locSelected) {
+      const e = locEntries.find(x => x.name === name);
+      if (!e) continue;
+      const ok = await localfs.removeEntry(locHandle, locPath, name, e.kind);
+      if (!ok) okAll = false;
+    }
+    locSelected.clear();
+    locSetStatus(okAll ? '已删除' : '部分删除失败');
+    locRefresh();
+  };
+  window.locToggleSelectAll = () => {
+    const all = locSorted();
+    const allSelected = all.length > 0 && all.every(e => locSelected.has(e.name));
+    if (allSelected) {
+      all.forEach(e => locSelected.delete(e.name));
+    } else {
+      all.forEach(e => locSelected.add(e.name));
+    }
+    locRender();
+  };
+
+  // 递归收集本地文件（目录上传：文件名用相对路径，服务端按路径重建子目录）
+  async function locCollectFiles(path, prefix, out) {
+    const entries = await localfs.listDir(locHandle, path);
+    for (const e of entries) {
+      const rel = prefix ? prefix + '/' + e.name : e.name;
+      if (e.kind === 'dir') {
+        await locCollectFiles([...path, e.name], rel, out);
+      } else {
+        const data = await localfs.readFile(locHandle, [...path, e.name]);
+        out.push({ name: rel, size: data.length, modifiedTime: e.modifiedTime, data });
+      }
+    }
+  }
+
+  window.locSend = async () => {
+    const conn = globals.getConn();
+    if (!conn) return;
+    if (!locSelected.size) { locSetStatus('未选择任何条目'); return; }
+    if (!locHandle) { locSetStatus('请先选择本地文件夹'); return; }
+    if (!fmPath) { locSetStatus('远程目录未就绪'); return; }
+    const selected = locEntries.filter(e => locSelected.has(e.name));
+    locSetStatus('准备上传…');
+    try {
+      const files = [];
+      for (const e of selected) {
+        if (e.kind === 'dir') {
+          await locCollectFiles([...locPath, e.name], e.name, files);
+        } else {
+          const data = await localfs.readFile(locHandle, [...locPath, e.name]);
+          files.push({ name: e.name, size: data.length, modifiedTime: e.modifiedTime, data });
+        }
+      }
+      if (!files.length) { locSetStatus('没有可上传的文件'); return; }
+      const { id, promise } = conn.uploadRemotePath(fmPath, files);
+      const firstName = files.length === 1 ? files[0].name : files[0].name + ' 等 ' + files.length + ' 个文件';
+      ensureTransferRow(id, firstName, 'up');
+      promise.then(() => {
+        finishTransferRow(id, firstName, true);
+        locSetStatus('上传完成: ' + files.length + ' 个文件');
+        setTimeout(fmRefresh, 600);
+      }).catch((e) => {
+        finishTransferRow(id, firstName, false, e?.message || String(e));
+        locSetStatus('上传失败: ' + (e?.message || e));
+      });
+    } catch (e) {
+      locSetStatus('上传准备失败: ' + (e?.message || e));
+    }
+  };
+
+  // ---- 传输栏 ----
+  let transferCount = 0;
+
+  function refreshTransfersPane() {
+    const pane = document.querySelector('#fm-transfers-pane');
+    if (pane) pane.style.display = transferCount > 0 ? 'block' : 'none';
+  }
+  function ensureTransferRow(id, name, kind) {
+    transferCount++;
+    refreshTransfersPane();
     let row = document.querySelector('#transfer-' + id);
-    if (row) return row;
+    if (row) { row.querySelector('.t-name').textContent = name; return row; }
     row = document.createElement('div');
     row.id = 'transfer-' + id;
-    row.style.cssText = 'padding:6px 8px; border:1px solid #ddd; border-radius:4px; margin-bottom:4px; font-size:12px;';
-    row.innerHTML = '<div style="display:flex;justify-content:space-between;"><span class="t-name">' + name + '</span><span class="t-pct">0%</span></div>' +
-      '<div style="background:#eee;height:8px;border-radius:4px;margin-top:4px;overflow:hidden;"><div class="t-bar" style="background:#024EFF;height:100%;width:0%;transition:width .15s;"></div></div>' +
-      '<div class="t-meta" style="color:#666;margin-top:2px;">等待中…</div>';
-    wrap.appendChild(row);
+    row.className = 'fm-transfer-row';
+    row.innerHTML =
+      '<div style="display:flex;justify-content:space-between;gap:6px;align-items:center;">' +
+      '<span class="t-name" style="word-break:break-all;"></span>' +
+      '<span class="t-pct" style="white-space:nowrap;">0%</span>' +
+      '<button class="t-cancel" title="取消">✕</button></div>' +
+      '<div class="t-bar-wrap"><div class="t-bar" style="width:0%;"></div></div>' +
+      '<div class="t-meta"></div>';
+    row.querySelector('.t-name').textContent = name;
+    row.querySelector('.t-cancel').onclick = () => {
+      const conn = globals.getConn();
+      if (conn) conn.cancelTransfer(id);
+      row.dataset.cancelled = '1';
+      row.querySelector('.t-meta').textContent = '已取消';
+      row.querySelector('.t-cancel').disabled = true;
+    };
+    document.querySelector('#filemgr-transfers').appendChild(row);
     return row;
   }
   function updateTransferRow(id, name, received, total) {
@@ -382,15 +757,47 @@ if (app) {
     row.querySelector('.t-meta').textContent = fmtSize(received) + (total ? ' / ' + fmtSize(total) : '');
   }
   function finishTransferRow(id, name, ok, errMsg) {
+    transferCount = Math.max(0, transferCount - 1);
+    refreshTransfersPane();
     const row = document.querySelector('#transfer-' + id);
     if (!row) return;
+    // 用户主动取消：保持「已取消」状态，不被 reject 的失败提示覆盖
+    if (row.dataset.cancelled === '1') return;
     row.querySelector('.t-pct').textContent = ok ? '✓ 完成' : '✗ 失败';
-    row.querySelector('.t-bar').style.width = ok ? '100%' : '100%';
+    row.querySelector('.t-bar').style.width = '100%';
     row.querySelector('.t-bar').style.background = ok ? '#16A34A' : '#DC2626';
-    row.querySelector('.t-meta').textContent = ok ? '已保存到下载' : (errMsg || '未知错误');
+    row.querySelector('.t-meta').textContent = ok ? '完成' : (errMsg || '未知错误');
+    const btn = row.querySelector('.t-cancel');
+    if (btn) btn.disabled = true;
   }
 
-  let passwordPromptActive = false;
+  // ---- 文件响应钩子（dir/digest/block/done/error 的核心处理在 connection.ts） ----
+  function onFileResponse(fr) {
+    if (fr.error) console.warn('[sundesk] file error', fr.error);
+    if (fr.done && !fr.done.id) console.debug('[sundesk] file op done', fr.done);
+  }
+
+  function bindTransferProgress(conn) {
+    conn.onDownloadProgress = (jobId, fileName, received, total) => {
+      updateTransferRow(jobId, fileName, received, total);
+    };
+    conn.onUploadProgress = (jobId, fileName, sent, total) => {
+      updateTransferRow(jobId, fileName, sent, total);
+    };
+    // 下载完成保存：本地已授权 → 写入授权目录（保留相对路径）；否则返回 false 走浏览器下载
+    conn.onDownloadFile = async (jobId, relPath, blob) => {
+      if (!locHandle) return false;
+      const parts = relPath.split('/').filter(Boolean);
+      if (!parts.length) return false;
+      const ok = await localfs.writeFile(locHandle, parts, new Uint8Array(await blob.arrayBuffer()));
+      if (ok) {
+        const row = document.querySelector('#transfer-' + jobId);
+        if (row) row.querySelector('.t-meta').textContent = '已保存到本地: ' + parts.join('/');
+      }
+      return ok;
+    };
+  }
+
   function msgbox(type, title, text) {
     if (!globals.getConn()) return;
     // 文件传输会话就绪：显示文件管理器，隐藏其他面板
@@ -401,6 +808,16 @@ if (app) {
       const idVal = localStorage.getItem('id') || '';
       document.querySelector('#filemgr-id').textContent = idVal;
       document.querySelector('#filemgr').style.display = 'block';
+      // 复位传输栏与选择状态
+      document.querySelector('#filemgr-transfers').innerHTML = '';
+      transferCount = 0;
+      refreshTransfersPane();
+      fmSelected.clear();
+      locSelected.clear();
+      locPath = [];
+      locHistory = [];
+      bindTransferProgress(globals.getConn());
+      locRefresh();
       fmPath = '';
       fmLoad('');
       return;

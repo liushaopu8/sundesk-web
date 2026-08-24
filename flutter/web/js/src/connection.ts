@@ -33,6 +33,20 @@ type DownloadJob = {
   resolve: () => void;
   reject: (e: any) => void;
 };
+// 上传任务（浏览器→远程）
+type UploadJob = {
+  id: number;
+  remotePath: string;
+  files: message.FileEntry[];
+  blobs: Uint8Array[];      // 与 files 一一对应的文件内容
+  currentFileNum: number;   // 正在发送的文件下标
+  sent: number;             // 当前文件已发送字节
+  sentTotal: number;        // 累计已发送字节
+  totalSize: number;        // 所有文件总字节
+  waitingConfirm: boolean;  // 等待服务端 send_confirm
+  resolve: () => void;
+  reject: (e: any) => void;
+};
 //const cursorCanvas = document.createElement("canvas");
 
 export default class Connection {
@@ -57,7 +71,13 @@ export default class Connection {
   // 下载任务（远程→浏览器）：job id -> 状态
   _downloadId: number;
   _downloads: Map<number, DownloadJob>;
+  // 上传任务（浏览器→远程）：job id -> 状态
+  _uploadId: number;
+  _uploads: Map<number, UploadJob>;
   onDownloadProgress?: (id: number, fileName: string, received: number, total: number) => void;
+  onUploadProgress?: (id: number, fileName: string, sent: number, total: number) => void;
+  // 下载文件保存钩子：UI 侧尝试写入本地授权目录；返回 false 则走浏览器下载兜底
+  onDownloadFile?: (jobId: number, relPath: string, data: Blob) => Promise<boolean>;
   //_cursors: { [name: number]: any };
 
   constructor() {
@@ -70,6 +90,8 @@ export default class Connection {
     this._readDirTasks = new Map();
     this._downloadId = 1;
     this._downloads = new Map();
+    this._uploadId = 1;
+    this._uploads = new Map();
     //this._cursors = {};
   }
 
@@ -334,6 +356,8 @@ export default class Connection {
         globals.playAudio(msg?.audio_frame.data);
       } else if (msg?.file_response) {
         this.handleFileResponse(msg?.file_response);
+      } else if (msg?.file_action) {
+        this.handleFileAction(msg?.file_action);
       }
     }
   }
@@ -564,6 +588,11 @@ export default class Connection {
       const job = this._downloads.get(dg.id);
       if (job && !dg.is_upload) {
         const idx = dg.file_num as number;
+        // 多文件下载：进入下一个文件前，先把上一个文件存盘（服务端 digest 按文件顺序到达）
+        if (idx > 0) {
+          const prev = idx - 1;
+          this.saveDownloadedFile(job, prev);
+        }
         job.chunks = [];
         job.received = 0;
         job.currentFileNum = idx;
@@ -575,6 +604,20 @@ export default class Connection {
         this._ws?.sendMessage({ file_action: action });
         console.debug('[sundesk] download confirm file', idx, 'size', dg.file_size);
       }
+      // 上传流程：服务端发现同名文件已存在（内容不同）→ 回 digest 询问是否覆盖。
+      // 当前策略：内容完全相同则跳过，否则覆盖（覆盖弹窗确认后续版本再加）。
+      const ujob = this._uploads.get(dg.id);
+      if (ujob && dg.is_upload) {
+        ujob.waitingConfirm = false;
+        const conf = message.FileTransferSendConfirmRequest.fromPartial({
+          id: dg.id, file_num: dg.file_num,
+          skip: dg.is_identical || undefined,
+          offset_blk: dg.is_identical ? undefined : 0,
+        });
+        const action = message.FileAction.fromPartial({ send_confirm: conf });
+        this._ws?.sendMessage({ file_action: action });
+        console.debug('[sundesk] upload overwrite decision:', dg.is_identical ? 'skip' : 'overwrite', 'file', dg.file_num);
+      }
     }
     // 3) block：累积文件数据
     if (fr.block) {
@@ -584,12 +627,19 @@ export default class Connection {
         this.handleDownloadBlock(job, b);
       }
     }
-    // 4) done：当前文件传完，存盘
+    // 4) done：整个任务完成（服务端只在全部文件读完后发一次）
     if (fr.done) {
       const dn = fr.done;
       const job = this._downloads.get(dn.id);
       if (job) {
         this.handleDownloadDone(job, dn.file_num as number);
+      }
+      // 上传完成：服务端写完磁盘后回 done 确认
+      const ujob = this._uploads.get(dn.id);
+      if (ujob) {
+        ujob.resolve();
+        this._uploads.delete(dn.id);
+        console.debug('[sundesk] upload done:', dn.id, 'file_num', dn.file_num);
       }
     }
     // 5) error
@@ -599,6 +649,11 @@ export default class Connection {
       if (job) {
         job.reject?.(new Error(e.error));
         this._downloads.delete(e.id);
+      }
+      const ujob = this._uploads.get(e.id);
+      if (ujob) {
+        ujob.reject?.(new Error(e.error));
+        this._uploads.delete(e.id);
       }
       console.warn('[sundesk] file error', e);
     }
@@ -664,26 +719,43 @@ export default class Connection {
   }
 
   handleDownloadDone(job: DownloadJob, fileNum: number) {
-    const entry = job.entries[fileNum];
-    const name = entry?.name || ('download_' + job.id + '_' + fileNum);
-    // 合并 chunk 存盘
-    const blob = new Blob(job.chunks as BlobPart[], { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    console.debug('[sundesk] downloaded file:', name, blob.size, 'bytes');
-    job.chunks = [];
-    job.received = 0;
-    // 单文件/最后一个文件：完成整个任务
+    if (job.chunks.length > 0) {
+      this.saveDownloadedFile(job, fileNum);
+    }
+    // 最后一个文件：完成整个任务（服务端只在全部读完后发一次 done）
     if (fileNum >= job.entries.length - 1) {
       job.resolve();
       this._downloads.delete(job.id);
     }
+  }
+
+  /** 保存已下载完成的单个文件：优先写本地授权目录（UI 钩子），否则浏览器下载兜底 */
+  async saveDownloadedFile(job: DownloadJob, fileNum: number) {
+    const entry = job.entries[fileNum];
+    const relPath = entry?.name || ('download_' + job.id + '_' + fileNum);
+    const blob = new Blob(job.chunks as BlobPart[], { type: 'application/octet-stream' });
+    job.chunks = [];
+    job.received = 0;
+    if (this.onDownloadFile) {
+      try {
+        if (await this.onDownloadFile(job.id, relPath, blob)) {
+          console.debug('[sundesk] downloaded to local folder:', relPath, blob.size, 'bytes');
+          return;
+        }
+      } catch (e) {
+        console.warn('[sundesk] local save failed, fallback to browser download', e);
+      }
+    }
+    // 兜底：浏览器下载（relPath 可能是相对路径，取文件名）
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = relPath.split('/').pop() || relPath;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    console.debug('[sundesk] downloaded file:', relPath, blob.size, 'bytes');
   }
 
   /**
@@ -721,6 +793,147 @@ export default class Connection {
       create: message.FileDirCreate.fromPartial({ id: 0, path }),
     });
     this._ws?.sendMessage({ file_action: action });
+  }
+
+  /** 删除远程文件或目录（目录支持递归）。id=0 无回执跟踪，由 UI 层刷新目录确认 */
+  removeRemotePath(path: string, isDir: boolean, recursive: boolean = true) {
+    const action = message.FileAction.fromPartial(
+      isDir
+        ? { remove_dir: message.FileRemoveDir.fromPartial({ id: 0, path, recursive }) }
+        : { remove_file: message.FileRemoveFile.fromPartial({ id: 0, path, file_num: 0 }) }
+    );
+    this._ws?.sendMessage({ file_action: action });
+    console.debug('[sundesk] remove remote:', isDir ? 'dir' : 'file', path);
+  }
+
+  /** 取消传输（下载或上传） */
+  cancelTransfer(id: number) {
+    const action = message.FileAction.fromPartial({
+      cancel: message.FileTransferCancel.fromPartial({ id }),
+    });
+    this._ws?.sendMessage({ file_action: action });
+    const d = this._downloads.get(id);
+    if (d) { d.reject?.(new Error('cancelled')); this._downloads.delete(id); }
+    const u = this._uploads.get(id);
+    if (u) { u.reject?.(new Error('cancelled')); this._uploads.delete(id); }
+    console.debug('[sundesk] cancel transfer', id);
+  }
+
+  /** 上传流程：处理服务端发来的 file_action（目前只有 send_confirm） */
+  handleFileAction(fa: message.FileAction) {
+    if (fa.send_confirm) {
+      const sc = fa.send_confirm;
+      const job = this._uploads.get(sc.id);
+      if (!job) return;
+      job.waitingConfirm = false;
+      const idx = job.currentFileNum;
+      if (sc.skip) {
+        // 服务端判定与远端文件完全相同 → 跳过此文件
+        console.debug('[sundesk] upload skip file', idx, job.files[idx]?.name);
+        this.advanceUpload(job);
+      } else if (sc.offset_blk !== undefined) {
+        // 服务端确认接收 → 开始发送块
+        console.debug('[sundesk] upload confirmed file', idx, job.files[idx]?.name);
+        this.sendUploadBlocks(job, idx);
+      }
+    }
+  }
+
+  // ---- 上传：浏览器 → 远程 ----
+
+  /**
+   * 上传本地文件到远程目录。
+   * 协议（与下载对称）：FileAction.receive → 逐文件 FileResponse.digest → 服务端 send_confirm
+   * → FileResponse.block（128KB，不压缩）→ 全部完成后 FileResponse.done。
+   * files.name 可为相对路径（目录上传时服务端会按路径重建子目录）。
+   */
+  uploadRemotePath(
+    remotePath: string,
+    files: { name: string; size: number; modifiedTime: number; data: Uint8Array }[]
+  ): { id: number; promise: Promise<void> } {
+    const id = this._uploadId++;
+    let resolve: () => void, reject: (e: any) => void;
+    const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
+    const job: UploadJob = {
+      id, remotePath,
+      files: files.map(f => message.FileEntry.fromPartial({
+        name: f.name, size: f.size, modified_time: f.modifiedTime, entry_type: message.FileType.File,
+      })),
+      blobs: files.map(f => f.data),
+      currentFileNum: 0, sent: 0, sentTotal: 0,
+      totalSize: files.reduce((s, f) => s + f.size, 0),
+      waitingConfirm: false,
+      resolve: resolve!, reject: reject!,
+    };
+    this._uploads.set(id, job);
+    const action = message.FileAction.fromPartial({
+      receive: message.FileTransferReceiveRequest.fromPartial({
+        id, path: remotePath, file_num: 0, total_size: job.totalSize, files: job.files,
+      }),
+    });
+    console.debug('[sundesk] upload request:', remotePath, 'job', id, 'files', job.files.length, 'total', job.totalSize);
+    this._ws?.sendMessage({ file_action: action });
+    // 服务端 NewWrite 后不回包，由客户端主动发起首个文件的 digest
+    this.sendUploadDigest(job, 0);
+    return { id, promise };
+  }
+
+  sendUploadDigest(job: UploadJob, idx: number) {
+    const f = job.files[idx];
+    if (!f) { this.finishUpload(job); return; }
+    job.currentFileNum = idx;
+    job.sent = 0;
+    job.waitingConfirm = true;
+    const resp = message.FileResponse.fromPartial({
+      digest: message.FileTransferDigest.fromPartial({
+        id: job.id, file_num: idx, file_size: f.size, last_modified: f.modified_time,
+      }),
+    });
+    this._ws?.sendMessage({ file_response: resp });
+    console.debug('[sundesk] upload digest file', idx, f.name, 'size', f.size);
+  }
+
+  async sendUploadBlocks(job: UploadJob, idx: number) {
+    const f = job.files[idx];
+    const data = job.blobs[idx];
+    if (!f || !data) { this.advanceUpload(job); return; }
+    const BUF = 128 * 1024;
+    for (let off = 0; off < data.length; off += BUF) {
+      const chunk = data.subarray(off, Math.min(off + BUF, data.length));
+      const resp = message.FileResponse.fromPartial({
+        block: message.FileTransferBlock.fromPartial({
+          id: job.id, file_num: idx, data: chunk, compressed: false,
+        }),
+      });
+      this._ws?.sendMessage({ file_response: resp });
+      job.sent += chunk.length;
+      job.sentTotal += chunk.length;
+      this.onUploadProgress?.(job.id, f.name, job.sentTotal, job.totalSize);
+      // 大文件每隔一段让出事件循环，避免 UI 卡死
+      if (off % (BUF * 16) === 0 && off > 0) {
+        await sleep(0);
+      }
+    }
+    console.debug('[sundesk] upload blocks done file', idx, f.name, job.sent, 'bytes');
+    this.advanceUpload(job);
+  }
+
+  /** 当前文件发送完毕：推进到下一个文件，全部完成则发 done */
+  advanceUpload(job: UploadJob) {
+    const next = job.currentFileNum + 1;
+    if (next >= job.files.length) {
+      this.finishUpload(job);
+    } else {
+      this.sendUploadDigest(job, next);
+    }
+  }
+
+  finishUpload(job: UploadJob) {
+    const resp = message.FileResponse.fromPartial({
+      done: message.FileTransferDone.fromPartial({ id: job.id, file_num: job.files.length - 1 }),
+    });
+    this._ws?.sendMessage({ file_response: resp });
+    console.debug('[sundesk] upload done sent, waiting ack, job', job.id);
   }
 
   getOptionMessage(): message.OptionMessage | undefined {
