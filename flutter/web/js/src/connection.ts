@@ -22,6 +22,17 @@ type MsgboxCallback = (type: string, title: string, text: string, link: string) 
 type DrawCallback = (display: number, data: Uint8Array) => void;
 // 文件传输响应回调（dir/block/error/done/digest）
 type FileResponseCallback = (resp: message.FileResponse) => void;
+// 下载任务状态（远程→浏览器）
+type DownloadJob = {
+  id: number;
+  path: string;
+  entries: message.FileEntry[];
+  chunks: Uint8Array[];
+  received: number;
+  currentFileNum: number;
+  resolve: () => void;
+  reject: (e: any) => void;
+};
 //const cursorCanvas = document.createElement("canvas");
 
 export default class Connection {
@@ -43,6 +54,10 @@ export default class Connection {
   _fileResp: FileResponseCallback | undefined;
   // 待完成的远程目录读取请求：path -> {resolve/reject/timeout}
   _readDirTasks: Map<string, { resolve: (d: message.FileDirectory) => void; reject: (e: any) => void; timer: any }>;
+  // 下载任务（远程→浏览器）：job id -> 状态
+  _downloadId: number;
+  _downloads: Map<number, DownloadJob>;
+  onDownloadProgress?: (id: number, fileName: string, received: number, total: number) => void;
   //_cursors: { [name: number]: any };
 
   constructor() {
@@ -53,6 +68,8 @@ export default class Connection {
     this._videoTestSpeed = [0, 0];
     this._mode = "remote";
     this._readDirTasks = new Map();
+    this._downloadId = 1;
+    this._downloads = new Map();
     //this._cursors = {};
   }
 
@@ -499,6 +516,9 @@ export default class Connection {
       my_name: "web", // to-do
       password: login.password,
       option: this.getOptionMessage(),
+      // 文件传输模式下声明版本，使服务端启用与 1.2.5 一致的 digest/overwrite 流程；
+      // 远程桌面模式保持原有行为（step6b 已验证可用），不改动。
+      version: isFile ? "1.2.5" : undefined,
       // 文件传输模式：告知服务端进入文件传输会话，不请求视频流
       video_ack_required: !isFile,
       file_transfer: isFile ? message.FileTransfer.fromPartial({ dir: "", show_hidden: false }) : undefined,
@@ -514,11 +534,16 @@ export default class Connection {
   }
 
   handleFileResponse(fr: message.FileResponse) {
-    // 1) 目录列表响应：完成等待中的 readRemoteDir
+    // 1) 目录列表响应
     if (fr.dir) {
       const d = fr.dir;
-      // id>0 是递归读取结果，目前只做普通读取（按 path 匹配）
-      if (d.id === 0 || d.id === undefined) {
+      // id>0 且是下载任务的文件列表（send 请求返回），交给下载逻辑
+      if (d.id > 0 && this._downloads.has(d.id)) {
+        this.handleDownloadDir(d);
+        return;
+      }
+      // id>0 但不是下载任务，或 id==0：普通 read_dir 响应
+      if (d.id === 0 || d.id === undefined || !this._downloads.has(d.id)) {
         // 先按返回路径精确匹配；首次读根目录（请求 path=""）时返回的是实际 home 路径，
         // 此时用 "" 占位的待请求任务来接收
         let task = this._readDirTasks.get(d.path);
@@ -533,11 +558,131 @@ export default class Connection {
         }
       }
     }
-    // 2) 其他响应（block/error/done/digest）交给 UI 层的传输模型处理
+    // 2) digest：下载场景下（is_upload=false），回送 send_confirm 确认接收该文件
+    if (fr.digest) {
+      const dg = fr.digest;
+      const job = this._downloads.get(dg.id);
+      if (job && !dg.is_upload) {
+        const idx = dg.file_num as number;
+        job.chunks = [];
+        job.received = 0;
+        job.currentFileNum = idx;
+        // 告诉服务端：从头开始发（offset_blk=0）
+        const conf = message.FileTransferSendConfirmRequest.fromPartial({
+          id: dg.id, file_num: idx, offset_blk: 0,
+        });
+        const action = message.FileAction.fromPartial({ send_confirm: conf });
+        this._ws?.sendMessage({ file_action: action });
+        console.debug('[sundesk] download confirm file', idx, 'size', dg.file_size);
+      }
+    }
+    // 3) block：累积文件数据
+    if (fr.block) {
+      const b = fr.block;
+      const job = this._downloads.get(b.id);
+      if (job) {
+        this.handleDownloadBlock(job, b);
+      }
+    }
+    // 4) done：当前文件传完，存盘
+    if (fr.done) {
+      const dn = fr.done;
+      const job = this._downloads.get(dn.id);
+      if (job) {
+        this.handleDownloadDone(job, dn.file_num as number);
+      }
+    }
+    // 5) error
+    if (fr.error) {
+      const e = fr.error;
+      const job = this._downloads.get(e.id);
+      if (job) {
+        job.reject?.(new Error(e.error));
+        this._downloads.delete(e.id);
+      }
+      console.warn('[sundesk] file error', e);
+    }
+    // 其他响应交给 UI 层
     if (this._fileResp) {
       this._fileResp(fr);
-    } else if (!fr.dir) {
+    } else if (!fr.dir && !fr.digest && !fr.block && !fr.done && !fr.error) {
       console.debug('[sundesk] file_response (no UI handler):', Object.keys(fr));
+    }
+  }
+
+  // ---- 下载：远程 → 浏览器 ----
+
+  /**
+   * 下载远程文件或目录。
+   * 发 FileAction.send，服务端回目录列表（entries），随后逐文件 digest→block→done。
+   */
+  downloadRemotePath(path: string): { id: number; promise: Promise<void> } {
+    const id = this._downloadId++;
+    let resolve: () => void, reject: (e: any) => void;
+    const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
+    const job: DownloadJob = {
+      id, path, entries: [], chunks: [], received: 0, currentFileNum: 0,
+      resolve: resolve!, reject: reject!,
+    };
+    this._downloads.set(id, job);
+    const action = message.FileAction.fromPartial({
+      send: message.FileTransferSendRequest.fromPartial({
+        id, path, file_num: 0, include_hidden: false,
+      }),
+    });
+    console.debug('[sundesk] download request:', path, 'job', id);
+    this._ws?.sendMessage({ file_action: action });
+    return { id, promise };
+  }
+
+  handleDownloadDir(d: message.FileDirectory) {
+    const job = this._downloads.get(d.id);
+    if (!job) return;
+    job.entries = d.entries || [];
+    job.path = d.path;
+    console.debug('[sundesk] download file list:', job.entries.length, 'entries at', d.path);
+    // 等待服务端发 digest；空目录直接完成
+    if (job.entries.length === 0) {
+      job.resolve();
+      this._downloads.delete(d.id);
+    }
+  }
+
+  async handleDownloadBlock(job: DownloadJob, b: message.FileTransferBlock) {
+    let data: Uint8Array = b.data || new Uint8Array(0);
+    if (b.compressed && b.data && b.data.length) {
+      try {
+        const dec = await decompress(b.data);
+        if (dec) data = dec; // 解压失败则退回原始数据
+      } catch (e) { console.error('[sundesk] decompress block failed', e); }
+    }
+    job.chunks.push(data);
+    job.received += data.length;
+    const name = job.entries[b.file_num as number]?.name || ('file_' + b.file_num);
+    const total = job.entries[b.file_num as number]?.size || 0;
+    this.onDownloadProgress?.(job.id, name, job.received, total);
+  }
+
+  handleDownloadDone(job: DownloadJob, fileNum: number) {
+    const entry = job.entries[fileNum];
+    const name = entry?.name || ('download_' + job.id + '_' + fileNum);
+    // 合并 chunk 存盘
+    const blob = new Blob(job.chunks as BlobPart[], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    console.debug('[sundesk] downloaded file:', name, blob.size, 'bytes');
+    job.chunks = [];
+    job.received = 0;
+    // 单文件/最后一个文件：完成整个任务
+    if (fileNum >= job.entries.length - 1) {
+      job.resolve();
+      this._downloads.delete(job.id);
     }
   }
 

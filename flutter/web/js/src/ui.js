@@ -62,9 +62,11 @@ if (app) {
         <th style="text-align:left; padding:4px 8px; border-bottom:1px solid #ddd;">名称</th>
         <th style="text-align:right; padding:4px 8px; border-bottom:1px solid #ddd;">大小</th>
         <th style="text-align:left; padding:4px 8px; border-bottom:1px solid #ddd;">修改时间</th>
+        <th style="text-align:center; padding:4px 8px; border-bottom:1px solid #ddd;">操作</th>
       </tr></thead>
       <tbody></tbody>
     </table>
+    <div id="filemgr-transfers" style="margin-top:10px;"></div>
     <div id="filemgr-status" style="margin-top:6px; color:#666; font-size:12px;"></div>
   </div>
 `;
@@ -280,16 +282,24 @@ if (app) {
       tr.onmouseover = () => tr.style.background = '#f5f5f5';
       tr.onmouseout = () => tr.style.background = '';
       const icon = isDir(e) ? '📁' : '📄';
+      let actionCell;
+      if (isDir(e)) {
+        actionCell = '<td style="padding:4px 8px;text-align:center;color:#999;">—</td>';
+        tr.ondblclick = tr.onclick = () => fmOpen(e.name);
+      } else {
+        actionCell = '<td style="padding:4px 8px;text-align:center;"><button data-download="' + encodeURIComponent(e.name) + '" style="padding:2px 8px;cursor:pointer;">下载</button></td>';
+      }
       tr.innerHTML =
         '<td style="padding:4px 8px;">' + icon + ' ' + e.name + '</td>' +
         '<td style="padding:4px 8px; text-align:right;">' + (isDir(e) ? '' : fmtSize(e.size)) + '</td>' +
-        '<td style="padding:4px 8px; color:#666;">' + fmtTime(e.modified_time) + '</td>';
-      if (isDir(e)) {
-        tr.ondblclick = () => fmOpen(e.name);
-        tr.onclick = () => fmOpen(e.name);
-      }
+        '<td style="padding:4px 8px; color:#666;">' + fmtTime(e.modified_time) + '</td>' +
+        actionCell;
       tbody.appendChild(tr);
     }
+    // 下载按钮事件委托（避免内联 onclick 转义问题）
+    tbody.querySelectorAll('button[data-download]').forEach(btn => {
+      btn.onclick = (ev) => { ev.stopPropagation(); fmDownload(decodeURIComponent(btn.getAttribute('data-download'))); };
+    });
   }
 
   function fmJoin(dir, name) {
@@ -324,6 +334,60 @@ if (app) {
     if (fr.error) console.warn('[sundesk] file error', fr.error);
     if (fr.done) console.debug('[sundesk] file done', fr.done);
     if (fr.digest) console.debug('[sundesk] file digest', fr.digest);
+  }
+
+  // ---- 下载（远程→浏览器）----
+  window.fmDownload = (name) => {
+    const conn = globals.getConn();
+    if (!conn) return;
+    const remotePath = fmJoin(fmPath, name);
+    fmSetStatus('请求下载: ' + name);
+    const { id, promise } = conn.downloadRemotePath(remotePath);
+    const panel = ensureTransferRow(id, name);
+    // 进度回调
+    conn.onDownloadProgress = (jobId, fileName, received, total) => {
+      if (jobId !== id) return;
+      updateTransferRow(id, fileName, received, total);
+    };
+    promise.then(() => {
+      finishTransferRow(id, name, true);
+      fmSetStatus('下载完成: ' + name);
+      fmRefresh();
+    }).catch((e) => {
+      finishTransferRow(id, name, false, e?.message || String(e));
+      fmSetStatus('下载失败: ' + name + ' - ' + (e?.message || e));
+    });
+  };
+
+  function ensureTransferRow(id, name) {
+    let wrap = document.querySelector('#filemgr-transfers');
+    let row = document.querySelector('#transfer-' + id);
+    if (row) return row;
+    row = document.createElement('div');
+    row.id = 'transfer-' + id;
+    row.style.cssText = 'padding:6px 8px; border:1px solid #ddd; border-radius:4px; margin-bottom:4px; font-size:12px;';
+    row.innerHTML = '<div style="display:flex;justify-content:space-between;"><span class="t-name">' + name + '</span><span class="t-pct">0%</span></div>' +
+      '<div style="background:#eee;height:8px;border-radius:4px;margin-top:4px;overflow:hidden;"><div class="t-bar" style="background:#024EFF;height:100%;width:0%;transition:width .15s;"></div></div>' +
+      '<div class="t-meta" style="color:#666;margin-top:2px;">等待中…</div>';
+    wrap.appendChild(row);
+    return row;
+  }
+  function updateTransferRow(id, name, received, total) {
+    const row = document.querySelector('#transfer-' + id);
+    if (!row) return;
+    const pct = total > 0 ? Math.min(100, Math.round(received / total * 100)) : 0;
+    row.querySelector('.t-name').textContent = name;
+    row.querySelector('.t-pct').textContent = pct + '%';
+    row.querySelector('.t-bar').style.width = pct + '%';
+    row.querySelector('.t-meta').textContent = fmtSize(received) + (total ? ' / ' + fmtSize(total) : '');
+  }
+  function finishTransferRow(id, name, ok, errMsg) {
+    const row = document.querySelector('#transfer-' + id);
+    if (!row) return;
+    row.querySelector('.t-pct').textContent = ok ? '✓ 完成' : '✗ 失败';
+    row.querySelector('.t-bar').style.width = ok ? '100%' : '100%';
+    row.querySelector('.t-bar').style.background = ok ? '#16A34A' : '#DC2626';
+    row.querySelector('.t-meta').textContent = ok ? '已保存到下载' : (errMsg || '未知错误');
   }
 
   let passwordPromptActive = false;
