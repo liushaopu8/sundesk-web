@@ -50,7 +50,7 @@ if (app) {
       <input type="password" id="password" style="flex: 1;" />
       <button id="toggle-password" type="button" onclick="togglePassword()" style="cursor: pointer; padding: 4px 8px;">👁</button>
     </div>
-    <button id="confirm" onclick="confirm()">Confirm</button>
+    <button id="confirm" onclick="confirmLogin()">Confirm</button>
     <button id="cancel" onclick="cancel();">Cancel</button>
   </div>
   <div id="status" style="display: none;">
@@ -72,11 +72,10 @@ if (app) {
       <div class="fm-pane">
         <div class="fm-pane-title">本地计算机</div>
         <div class="fm-toolbar">
-          <button onclick="locPick()" title="选择/授权本地文件夹（Chrome/Edge）">选择文件夹</button>
           ${iconBtn('back', 'locBack()', '返回')}
           ${iconBtn('up', 'locUp()', '父目录')}
-          <div class="fm-crumb" id="loc-crumb"></div>
-          <input type="search" id="loc-search" placeholder="搜索" oninput="locApplyFilter()" />
+          <input type="search" id="loc-search" placeholder="本地路径" oninput="locApplyFilter()" />
+          <button class="fm-pick" onclick="locPick()" title="选择/授权本地文件夹（Chrome/Edge）">${ICONS.folder.replace('width="18"', 'width="14"')} 选择文件夹</button>
           ${iconBtn('refresh', 'locRefresh()', '刷新')}
         </div>
         <div class="fm-actions">
@@ -104,8 +103,7 @@ if (app) {
         <div class="fm-toolbar">
           ${iconBtn('back', 'fmBack()', '返回')}
           ${iconBtn('up', 'fmUp()', '父目录')}
-          <div class="fm-crumb" id="fm-crumb"></div>
-          <input type="search" id="fm-search" placeholder="搜索" oninput="fmApplyFilter()" />
+          <input type="search" id="fm-search" placeholder="远程路径" oninput="fmApplyFilter()" />
           ${iconBtn('refresh', 'fmRefresh()', '刷新')}
         </div>
         <div class="fm-actions">
@@ -365,7 +363,9 @@ if (app) {
   }
 
   function fmRender() {
-    document.querySelector('#fm-crumb').textContent = fmPath || '/';
+    // 当前路径作为搜索框占位提示（甫总 2026-08-24）
+    const search = document.querySelector('#fm-search');
+    if (search) search.placeholder = fmPath || '/';
     const tbody = document.querySelector('#fm-list');
     tbody.innerHTML = '';
     const rows = fmSorted();
@@ -553,7 +553,9 @@ if (app) {
   }
 
   function locRender() {
-    document.querySelector('#loc-crumb').textContent = locCrumb();
+    // 当前路径作为搜索框占位提示（甫总 2026-08-24）
+    const search = document.querySelector('#loc-search');
+    if (search) search.placeholder = locCrumb();
     const tbody = document.querySelector('#loc-list');
     tbody.innerHTML = '';
     if (!locHandle) {
@@ -918,12 +920,12 @@ if (app) {
     if (fm) fm.style.display = 'none';
   }
 
-  window.confirm = () => {
-    console.debug('[sundesk] confirm() clicked');
+  window.confirmLogin = () => {
+    console.debug('[sundesk] confirmLogin() clicked');
     passwordPromptActive = false;
     const conn = globals.getConn();
     if (!conn) {
-      console.debug('[sundesk] confirm: no live connection, cancelling');
+      console.debug('[sundesk] confirmLogin: no live connection, cancelling');
       window.cancel();
       return;
     }
@@ -933,13 +935,13 @@ if (app) {
     if (password) {
       document.querySelector('div#password').style.display = 'none';
       try {
-        console.debug('[sundesk] confirm: calling login() with password');
+        console.debug('[sundesk] confirmLogin: calling login() with password');
         // login() 期望对象 { password }；传字符串会被当成对象解析，
         // info.password 为 undefined -> 变成空登录 -> 服务端永远回 password empty
         conn.login({ password: password });
-        console.debug('[sundesk] confirm: login() returned without throw');
+        console.debug('[sundesk] confirmLogin: login() returned without throw');
       } catch (e) {
-        console.error('[sundesk] confirm: login() THREW:', e);
+        console.error('[sundesk] confirmLogin: login() THREW:', e);
         // 连接可能已死（ws 关闭），回到连接页而不是卡死
         window.cancel();
       }

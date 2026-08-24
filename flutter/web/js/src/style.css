@@ -50,7 +50,8 @@
   background: #f8fafc;
 }
 .fm-toolbar input[type="search"] {
-  width: 110px;
+  flex: 1;
+  min-width: 80px;
   height: 28px;
   padding: 2px 8px;
   border: 1px solid #cbd5e1;
@@ -93,17 +94,16 @@
   background: #eef2ff;
   border-color: #c7d2fe;
 }
-.fm-toolbar .fm-crumb {
-  flex: 1;
-  min-width: 60px;
-  padding: 0 4px;
-  font-family: ui-monospace, "JetBrains Mono", monospace;
-  font-size: 12px;
-  color: #334155;
-  word-break: break-all;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.fm-toolbar .fm-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #024eff;
+  border-color: #c7d2fe;
+  background: #eef2ff;
+}
+.fm-toolbar .fm-pick:hover {
+  background: #e0e7ff;
 }
 .fm-actions .fm-primary {
   background: #024eff;
