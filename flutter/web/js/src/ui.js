@@ -12,7 +12,24 @@ window.onGlobalEvent = (message) => {
 window.onRgba = () => {}; // TS UI 用自带 YUVCanvas player 绘制，忽略核心的 rgba 通道
 window.onRegisteredEvent = () => {};
 
-const app = document.querySelector('#app');
+  // 线性图标（Lucide 风格，18px / stroke 2）
+  const ICONS = {
+    back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>',
+    up: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>',
+    refresh: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>',
+    home: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>',
+    plus: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
+    trash: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+    check: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/></svg>',
+    eye: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',
+    send: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>',
+    receive: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>',
+    folder: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+  };
+  const iconBtn = (icon, fn, title, extra = '') =>
+    `<button class="fm-icon" onclick="${fn}" title="${title}" ${extra}>${ICONS[icon]}</button>`;
+
+  const app = document.querySelector('#app');
 
 if (app) {
   app.innerHTML = `
@@ -55,21 +72,21 @@ if (app) {
       <div class="fm-pane">
         <div class="fm-pane-title">本地计算机</div>
         <div class="fm-toolbar">
-          <button onclick="locBack()" title="返回上一级">返回</button>
-          <button onclick="locUp()" title="父目录">父目录</button>
-          <button onclick="locHome()" title="默认目录（授权文件夹）">默认目录</button>
+          <button onclick="locPick()" title="选择/授权本地文件夹（Chrome/Edge）">选择文件夹</button>
+          ${iconBtn('back', 'locBack()', '返回')}
+          ${iconBtn('up', 'locUp()', '父目录')}
+          <div class="fm-crumb" id="loc-crumb"></div>
           <input type="search" id="loc-search" placeholder="搜索" oninput="locApplyFilter()" />
-          <button onclick="locRefresh()" title="刷新">刷新</button>
+          ${iconBtn('refresh', 'locRefresh()', '刷新')}
         </div>
         <div class="fm-actions">
-          <button onclick="locPick()" title="授权本地文件夹（Chrome/Edge）">选择文件夹</button>
-          <button onclick="locMkdir()" title="新建文件夹">新建</button>
-          <button onclick="locDelete()" title="删除所选">删除</button>
-          <button onclick="locToggleSelectAll()" title="全选/取消全选">全选</button>
+          ${iconBtn('home', 'locHome()', '默认目录')}
+          ${iconBtn('plus', 'locMkdir()', '新建文件夹')}
+          ${iconBtn('trash', 'locDelete()', '删除所选')}
+          ${iconBtn('check', 'locToggleSelectAll()', '全选/取消全选')}
           <label class="fm-hidden"><input type="checkbox" id="loc-hidden" onchange="locRefresh()" /> 显示隐藏</label>
-          <button class="fm-primary" onclick="locSend()" title="上传所选到远程当前目录">发送 →</button>
+          <button class="fm-primary" onclick="locSend()" title="上传所选到远程当前目录">发送 ${ICONS.send.replace('width="18"', 'width="14"')}</button>
         </div>
-        <div class="fm-crumb" id="loc-crumb"></div>
         <table class="fm-list">
           <thead><tr>
             <th class="fm-cb"></th>
@@ -85,21 +102,20 @@ if (app) {
       <div class="fm-pane">
         <div class="fm-pane-title">远程计算机</div>
         <div class="fm-toolbar">
-          <button onclick="fmBack()" title="返回上一级">返回</button>
-          <button onclick="fmUp()" title="父目录">父目录</button>
-          <button onclick="fmHome()" title="默认目录">默认目录</button>
+          ${iconBtn('back', 'fmBack()', '返回')}
+          ${iconBtn('up', 'fmUp()', '父目录')}
+          <div class="fm-crumb" id="fm-crumb"></div>
           <input type="search" id="fm-search" placeholder="搜索" oninput="fmApplyFilter()" />
-          <button onclick="fmRefresh()" title="刷新">刷新</button>
+          ${iconBtn('refresh', 'fmRefresh()', '刷新')}
         </div>
         <div class="fm-actions">
-          <button class="fm-primary" onclick="fmReceive()" title="下载所选到本地">← 接收</button>
-          <button onclick="fmHome()" title="默认目录">默认目录</button>
-          <button onclick="fmMkdir()" title="新建文件夹">新建</button>
-          <button onclick="fmDelete()" title="删除所选">删除</button>
-          <button onclick="fmToggleSelectAll()" title="全选/取消全选">全选</button>
+          <button class="fm-primary" onclick="fmReceive()" title="下载所选到本地">${ICONS.receive.replace('width="18"', 'width="14"')} 接收</button>
+          ${iconBtn('home', 'fmHome()', '默认目录')}
+          ${iconBtn('plus', 'fmMkdir()', '新建文件夹')}
+          ${iconBtn('trash', 'fmDelete()', '删除所选')}
+          ${iconBtn('check', 'fmToggleSelectAll()', '全选/取消全选')}
           <label class="fm-hidden"><input type="checkbox" id="fm-hidden" onchange="fmRefresh()" /> 显示隐藏</label>
         </div>
-        <div class="fm-crumb" id="fm-crumb"></div>
         <table class="fm-list">
           <thead><tr>
             <th class="fm-cb"></th>
@@ -418,14 +434,19 @@ if (app) {
     else { fmSortKey = k; fmSortDesc = false; }
     fmRender();
   };
-  window.fmMkdir = () => {
+  window.fmMkdir = async () => {
     const name = prompt('新建文件夹名称:');
     if (!name) return;
     const conn = globals.getConn();
     if (!conn) return;
-    conn.createRemoteDir(fmJoin(fmPath, name));
     fmSetStatus('创建中…');
-    setTimeout(fmRefresh, 500);
+    try {
+      await conn.createRemoteDir(fmJoin(fmPath, name));
+      fmSetStatus('已创建: ' + name);
+      fmRefresh();
+    } catch (e) {
+      fmSetStatus('创建失败: ' + (e?.message || e));
+    }
   };
   window.fmToggleSelectAll = () => {
     const all = fmSorted();
@@ -437,19 +458,30 @@ if (app) {
     }
     fmRender();
   };
-  window.fmDelete = () => {
+  window.fmDelete = async () => {
     if (!fmSelected.size) { fmSetStatus('未选择任何条目'); return; }
     const n = fmSelected.size;
     if (!confirm('确定删除远程的 ' + n + ' 个条目？（目录递归删除，不可恢复）')) return;
     const conn = globals.getConn();
     if (!conn) return;
+    const targets = [];
     fmSelected.forEach(name => {
       const e = fmEntries.find(x => x.name === name);
-      if (e) conn.removeRemotePath(fmJoin(fmPath, name), isDir(e), true);
+      if (e) targets.push({ full: fmJoin(fmPath, name), isDir: isDir(e) });
     });
     fmSelected.clear();
+    fmRender();
     fmSetStatus('删除中…');
-    setTimeout(fmRefresh, 600);
+    // 带回执：成功/失败都明确反馈（Android 端权限不足等会回 error）
+    const results = await Promise.allSettled(
+      targets.map(t => conn.removeRemotePath(t.full, t.isDir, true))
+    );
+    const ok = results.filter(r => r.status === 'fulfilled').length;
+    const fails = results.filter(r => r.status === 'rejected');
+    fmSetStatus(fails.length
+      ? '删除: 成功 ' + ok + '，失败 ' + fails.length + '（' + (fails[0].reason?.message || '未知原因') + '）'
+      : '已删除 ' + ok + ' 个条目');
+    fmRefresh();
   };
   window.fmReceive = () => {
     const conn = globals.getConn();
@@ -484,7 +516,9 @@ if (app) {
     if (el) el.textContent = s;
   }
   function locCrumb() {
-    return (locHandle ? '本地: ' : '') + (locPath.length ? locPath.join('/') : '(根目录)');
+    if (!locHandle) return '未授权本地目录，点「选择文件夹」';
+    const root = locHandle.name || '已授权目录';
+    return '本地: ' + (locPath.length ? root + '/' + locPath.join('/') : root);
   }
   function locApplyFilter() {
     const q = (document.querySelector('#loc-search')?.value || '').trim().toLowerCase();
@@ -798,6 +832,13 @@ if (app) {
     };
   }
 
+  // 进入文件传输会话时自动恢复上次授权的本地目录（IndexedDB 句柄）
+  async function restoreLocalRoot() {
+    if (!localfs.isLocalFSSupported()) { locRefresh(); return; }
+    locHandle = await localfs.getRootHandle();
+    locRefresh();
+  }
+
   function msgbox(type, title, text) {
     if (!globals.getConn()) return;
     // 文件传输会话就绪：显示文件管理器，隐藏其他面板
@@ -817,7 +858,7 @@ if (app) {
       locPath = [];
       locHistory = [];
       bindTransferProgress(globals.getConn());
-      locRefresh();
+      restoreLocalRoot();
       fmPath = '';
       fmLoad('');
       return;

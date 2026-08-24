@@ -68,6 +68,8 @@ export default class Connection {
   _fileResp: FileResponseCallback | undefined;
   // 待完成的远程目录读取请求：path -> {resolve/reject/timeout}
   _readDirTasks: Map<string, { resolve: (d: message.FileDirectory) => void; reject: (e: any) => void; timer: any }>;
+  // 文件操作回执（创建/删除）：id -> {resolve/reject/timeout}
+  _fileOps: Map<number, { resolve: () => void; reject: (e: any) => void; timer: any }>;
   // 下载任务（远程→浏览器）：job id -> 状态
   _downloadId: number;
   _downloads: Map<number, DownloadJob>;
@@ -88,6 +90,7 @@ export default class Connection {
     this._videoTestSpeed = [0, 0];
     this._mode = "remote";
     this._readDirTasks = new Map();
+    this._fileOps = new Map();
     this._downloadId = 1;
     this._downloads = new Map();
     this._uploadId = 1;
@@ -641,6 +644,14 @@ export default class Connection {
         this._uploads.delete(dn.id);
         console.debug('[sundesk] upload done:', dn.id, 'file_num', dn.file_num);
       }
+      // 文件操作完成（创建/删除）
+      const op = this._fileOps.get(dn.id);
+      if (op) {
+        clearTimeout(op.timer);
+        this._fileOps.delete(dn.id);
+        op.resolve();
+        console.debug('[sundesk] file op done:', dn.id);
+      }
     }
     // 5) error
     if (fr.error) {
@@ -654,6 +665,12 @@ export default class Connection {
       if (ujob) {
         ujob.reject?.(new Error(e.error));
         this._uploads.delete(e.id);
+      }
+      const op = this._fileOps.get(e.id);
+      if (op) {
+        clearTimeout(op.timer);
+        this._fileOps.delete(e.id);
+        op.reject(new Error(e.error));
       }
       console.warn('[sundesk] file error', e);
     }
@@ -787,23 +804,40 @@ export default class Connection {
     });
   }
 
-  /** 在远程创建目录 */
-  createRemoteDir(path: string) {
-    const action = message.FileAction.fromPartial({
-      create: message.FileDirCreate.fromPartial({ id: 0, path }),
+  /** 在远程创建目录（带回执，成功后 resolve；失败/超时 reject） */
+  createRemoteDir(path: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const id = this._downloadId++;
+      const timer = setTimeout(() => {
+        this._fileOps.delete(id);
+        reject(new Error('create dir timeout: ' + path));
+      }, 10000);
+      this._fileOps.set(id, { resolve, reject, timer });
+      const action = message.FileAction.fromPartial({
+        create: message.FileDirCreate.fromPartial({ id, path }),
+      });
+      this._ws?.sendMessage({ file_action: action });
+      console.debug('[sundesk] create remote dir:', path, 'op', id);
     });
-    this._ws?.sendMessage({ file_action: action });
   }
 
-  /** 删除远程文件或目录（目录支持递归）。id=0 无回执跟踪，由 UI 层刷新目录确认 */
-  removeRemotePath(path: string, isDir: boolean, recursive: boolean = true) {
-    const action = message.FileAction.fromPartial(
-      isDir
-        ? { remove_dir: message.FileRemoveDir.fromPartial({ id: 0, path, recursive }) }
-        : { remove_file: message.FileRemoveFile.fromPartial({ id: 0, path, file_num: 0 }) }
-    );
-    this._ws?.sendMessage({ file_action: action });
-    console.debug('[sundesk] remove remote:', isDir ? 'dir' : 'file', path);
+  /** 删除远程文件或目录（目录递归）。带回执，成功后 resolve；失败/超时 reject */
+  removeRemotePath(path: string, isDir: boolean, recursive: boolean = true): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const id = this._downloadId++;
+      const timer = setTimeout(() => {
+        this._fileOps.delete(id);
+        reject(new Error('remove timeout: ' + path));
+      }, 10000);
+      this._fileOps.set(id, { resolve, reject, timer });
+      const action = message.FileAction.fromPartial(
+        isDir
+          ? { remove_dir: message.FileRemoveDir.fromPartial({ id, path, recursive }) }
+          : { remove_file: message.FileRemoveFile.fromPartial({ id, path, file_num: 0 }) }
+      );
+      this._ws?.sendMessage({ file_action: action });
+      console.debug('[sundesk] remove remote:', isDir ? 'dir' : 'file', path, 'op', id);
+    });
   }
 
   /** 取消传输（下载或上传） */
