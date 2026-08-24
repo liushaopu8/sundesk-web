@@ -15,7 +15,12 @@ const app = document.querySelector('#app');
 
 if (app) {
   app.innerHTML = `
-  <div id="connect" style="text-align: center"><table style="display: inline-block">
+  <div id="connect" style="text-align: center">
+    <div style="margin-bottom: 12px;">
+      <label style="margin-right: 12px; cursor: pointer;"><input type="radio" name="mode" value="remote" checked /> 远程桌面</label>
+      <label style="cursor: pointer;"><input type="radio" name="mode" value="file" /> 文件传输</label>
+    </div>
+    <table style="display: inline-block">
     <tr><td><span>Host: </span></td><td><input id="host" /></td></tr>
     <tr><td><span>Key: </span></td><td><input id="key" /></td></tr>
     <tr><td><span>Id: </span></td><td><input id="id" /></td></tr>
@@ -38,6 +43,29 @@ if (app) {
     <button id="cancel" onclick="cancel();">Cancel</button>
     <canvas id="player"></canvas>
     <canvas id="test-yuv-decoder-canvas"></canvas>
+  </div>
+  <div id="filemgr" style="display: none; text-align: left; max-width: 900px; margin: 0 auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <div style="font-weight:bold;">📁 文件传输 - <span id="filemgr-id"></span></div>
+      <div><button onclick="cancel();">断开</button></div>
+    </div>
+    <div id="filemgr-toolbar" style="margin-bottom:6px;">
+      <button onclick="fmGoUp()">↑ 上级</button>
+      <button onclick="fmHome()">首页</button>
+      <button onclick="fmRefresh()">刷新</button>
+      <button onclick="fmMkdir()">新建文件夹</button>
+      <label style="margin-left:8px;cursor:pointer;"><input type="checkbox" id="fm-hidden" onchange="fmRefresh()" /> 显示隐藏</label>
+    </div>
+    <div id="filemgr-crumb" style="padding:4px 8px; background:#f5f5f5; border:1px solid #ddd; font-family:monospace; font-size:12px; word-break:break-all;"></div>
+    <table id="filemgr-list" style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead><tr style="background:#f0f0f0;">
+        <th style="text-align:left; padding:4px 8px; border-bottom:1px solid #ddd;">名称</th>
+        <th style="text-align:right; padding:4px 8px; border-bottom:1px solid #ddd;">大小</th>
+        <th style="text-align:left; padding:4px 8px; border-bottom:1px solid #ddd;">修改时间</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <div id="filemgr-status" style="margin-top:6px; color:#666; font-size:12px;"></div>
   </div>
 `;
 
@@ -174,21 +202,145 @@ if (app) {
     localStorage.setItem('id', id.value);
     const key = document.querySelector('#key');
     localStorage.setItem('key', key.value);
+    const modeRadio = document.querySelector('input[name=mode]:checked');
+    const mode = modeRadio ? modeRadio.value : 'remote';
+    currentMode = mode;
     const func = async () => {
       const conn = globals.newConn();
       conn.setMsgbox(msgbox);
       conn.setDraw(onRemoteFrame);
+      conn.setFileResponse(onFileResponse);
       document.querySelector('div#status').style.display = 'block';
       document.querySelector('div#connect').style.display = 'none';
       document.querySelector('div#text').innerHTML = 'Connecting ...';
-      await conn.start(id.value);
+      await conn.start(id.value, mode);
     };
     func();
+  }
+
+  // ============ 文件传输 UI ============
+  let currentMode = 'remote';
+  let fmPath = '';          // 当前远程路径
+  let fmEntries = [];       // 当前目录条目
+
+  function fmtSize(n) {
+    if (n === undefined || n === null) return '';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+    return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  }
+  function fmtTime(t) {
+    if (!t) return '';
+    try { return new Date(t * 1000).toLocaleString(); } catch (e) { return ''; }
+  }
+  function fmSetStatus(s) {
+    const el = document.querySelector('#filemgr-status');
+    if (el) el.textContent = s;
+  }
+  function isDir(e) { return e.entry_type === 0 || e.entry_type === 2 || e.entry_type === 3; }
+
+  async function fmLoad(path) {
+    const conn = globals.getConn();
+    if (!conn) return;
+    const showHidden = document.querySelector('#fm-hidden')?.checked;
+    fmSetStatus('读取目录中…');
+    try {
+      const dir = await conn.readRemoteDir(path, !!showHidden);
+      fmPath = dir.path || path;
+      fmEntries = (dir.entries || []).slice();
+      // 目录在前，文件在后；各自按名称排序
+      fmEntries.sort((a, b) => {
+        const da = isDir(a) ? 0 : 1, db = isDir(b) ? 0 : 1;
+        if (da !== db) return da - db;
+        return a.name.localeCompare(b.name);
+      });
+      fmRender();
+      fmSetStatus(fmEntries.length + ' 项');
+    } catch (e) {
+      fmSetStatus('读取失败: ' + (e?.message || e));
+    }
+  }
+
+  function fmRender() {
+    document.querySelector('#filemgr-crumb').textContent = fmPath || '/';
+    const tbody = document.querySelector('#filemgr-list tbody');
+    tbody.innerHTML = '';
+    // 非根目录显示“..”
+    if (fmPath && fmPath !== '/' && fmPath !== '') {
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      tr.innerHTML = '<td style="padding:4px 8px;">📁 ..</td><td></td><td></td>';
+      tr.onclick = () => fmGoUp();
+      tbody.appendChild(tr);
+    }
+    for (const e of fmEntries) {
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      tr.onmouseover = () => tr.style.background = '#f5f5f5';
+      tr.onmouseout = () => tr.style.background = '';
+      const icon = isDir(e) ? '📁' : '📄';
+      tr.innerHTML =
+        '<td style="padding:4px 8px;">' + icon + ' ' + e.name + '</td>' +
+        '<td style="padding:4px 8px; text-align:right;">' + (isDir(e) ? '' : fmtSize(e.size)) + '</td>' +
+        '<td style="padding:4px 8px; color:#666;">' + fmtTime(e.modified_time) + '</td>';
+      if (isDir(e)) {
+        tr.ondblclick = () => fmOpen(e.name);
+        tr.onclick = () => fmOpen(e.name);
+      }
+      tbody.appendChild(tr);
+    }
+  }
+
+  function fmJoin(dir, name) {
+    if (!dir) return '/' + name;
+    const sep = dir.includes('\\') ? '\\' : '/';
+    if (dir.endsWith(sep)) return dir + name;
+    return dir + sep + name;
+  }
+  function fmOpen(name) { fmLoad(fmJoin(fmPath, name)); }
+  window.fmGoUp = () => {
+    if (!fmPath || fmPath === '/') return;
+    const sep = fmPath.includes('\\') ? '\\' : '/';
+    let p = fmPath.replace(/[\\/]+$/, '');
+    const idx = p.lastIndexOf(sep);
+    const parent = idx <= 0 ? sep : p.substring(0, idx);
+    fmLoad(parent);
+  };
+  window.fmHome = () => fmLoad('');
+  window.fmRefresh = () => fmLoad(fmPath);
+  window.fmMkdir = () => {
+    const name = prompt('新建文件夹名称:');
+    if (!name) return;
+    const conn = globals.getConn();
+    if (!conn) return;
+    conn.createRemoteDir(fmJoin(fmPath, name));
+    setTimeout(fmRefresh, 500);
+  };
+
+  // 文件传输会话连接成功后加载根目录；block/error/done 先打日志（下一步做上传/下载）
+  function onFileResponse(fr) {
+    if (fr.block) console.debug('[sundesk] file block', fr.block.id, fr.block.file_num, fr.block.data?.length);
+    if (fr.error) console.warn('[sundesk] file error', fr.error);
+    if (fr.done) console.debug('[sundesk] file done', fr.done);
+    if (fr.digest) console.debug('[sundesk] file digest', fr.digest);
   }
 
   let passwordPromptActive = false;
   function msgbox(type, title, text) {
     if (!globals.getConn()) return;
+    // 文件传输会话就绪：显示文件管理器，隐藏其他面板
+    if (type == 'file-ready') {
+      passwordPromptActive = false;
+      document.querySelector('div#status').style.display = 'none';
+      document.querySelector('div#password').style.display = 'none';
+      const idVal = localStorage.getItem('id') || '';
+      document.querySelector('#filemgr-id').textContent = idVal;
+      document.querySelector('#filemgr').style.display = 'block';
+      fmPath = '';
+      fmLoad('');
+      return;
+    }
     if (type == 'input-password' || type == 're-input-password' || type == 'session-login-password') {
       passwordPromptActive = true;
       if (type == 're-input-password') {
@@ -240,6 +392,8 @@ if (app) {
     document.querySelector('div#password').style.display = 'none';
     document.querySelector('div#status').style.display = 'none';
     document.querySelector('div#canvas').style.display = 'none';
+    const fm = document.querySelector('div#filemgr');
+    if (fm) fm.style.display = 'none';
   }
 
   window.confirm = () => {

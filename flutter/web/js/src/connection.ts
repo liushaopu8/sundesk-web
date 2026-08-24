@@ -20,6 +20,8 @@ const SCHEMA = location.protocol === "https:" ? "wss://" : "ws://";
 
 type MsgboxCallback = (type: string, title: string, text: string, link: string) => void;
 type DrawCallback = (display: number, data: Uint8Array) => void;
+// 文件传输响应回调（dir/block/error/done/digest）
+type FileResponseCallback = (resp: message.FileResponse) => void;
 //const cursorCanvas = document.createElement("canvas");
 
 export default class Connection {
@@ -36,6 +38,11 @@ export default class Connection {
   _password: Uint8Array | undefined;
   _options: any;
   _videoTestSpeed: number[];
+  // 会话模式：'remote' 远程桌面（默认）| 'file' 文件传输
+  _mode: string;
+  _fileResp: FileResponseCallback | undefined;
+  // 待完成的远程目录读取请求：path -> {resolve/reject/timeout}
+  _readDirTasks: Map<string, { resolve: (d: message.FileDirectory) => void; reject: (e: any) => void; timer: any }>;
   //_cursors: { [name: number]: any };
 
   constructor() {
@@ -44,10 +51,13 @@ export default class Connection {
     this._msgs = [];
     this._id = "";
     this._videoTestSpeed = [0, 0];
+    this._mode = "remote";
+    this._readDirTasks = new Map();
     //this._cursors = {};
   }
 
-  async start(id: string) {
+  async start(id: string, mode: string = "remote") {
+    this._mode = mode;
     try {
       await this._start(id);
     } catch (e: any) {
@@ -305,6 +315,8 @@ export default class Connection {
         if (!this.handleMisc(msg?.misc)) break;
       } else if (msg?.audio_frame) {
         globals.playAudio(msg?.audio_frame.data);
+      } else if (msg?.file_response) {
+        this.handleFileResponse(msg?.file_response);
       }
     }
   }
@@ -480,16 +492,90 @@ export default class Connection {
     os_login?: message.OSLogin,
     password?: Uint8Array,
   }) {
+    const isFile = this._mode === "file";
     const login_request = message.LoginRequest.fromPartial({
       username: this._id!,
       my_id: "web", // to-do
       my_name: "web", // to-do
       password: login.password,
       option: this.getOptionMessage(),
-      video_ack_required: true,
+      // 文件传输模式：告知服务端进入文件传输会话，不请求视频流
+      video_ack_required: !isFile,
+      file_transfer: isFile ? message.FileTransfer.fromPartial({ dir: "", show_hidden: false }) : undefined,
       os_login: login.os_login,
     });
     this._ws?.sendMessage({ login_request });
+  }
+
+  // ============ 文件传输 ============
+
+  setFileResponse(cb: FileResponseCallback) {
+    this._fileResp = cb;
+  }
+
+  handleFileResponse(fr: message.FileResponse) {
+    // 1) 目录列表响应：完成等待中的 readRemoteDir
+    if (fr.dir) {
+      const d = fr.dir;
+      // id>0 是递归读取结果，目前只做普通读取（按 path 匹配）
+      if (d.id === 0 || d.id === undefined) {
+        // 先按返回路径精确匹配；首次读根目录（请求 path=""）时返回的是实际 home 路径，
+        // 此时用 "" 占位的待请求任务来接收
+        let task = this._readDirTasks.get(d.path);
+        if (!task && this._readDirTasks.has('')) {
+          task = this._readDirTasks.get('');
+        }
+        if (task) {
+          this._readDirTasks.delete(d.path);
+          this._readDirTasks.delete('');
+          clearTimeout(task.timer);
+          task.resolve(d);
+        }
+      }
+    }
+    // 2) 其他响应（block/error/done/digest）交给 UI 层的传输模型处理
+    if (this._fileResp) {
+      this._fileResp(fr);
+    } else if (!fr.dir) {
+      console.debug('[sundesk] file_response (no UI handler):', Object.keys(fr));
+    }
+  }
+
+  /**
+   * 读取远程目录。返回 FileDirectory（含 entries）。
+   * 发 FileAction.read_dir，服务端回 FileResponse.dir。
+   */
+  readRemoteDir(path: string, includeHidden: boolean = false): Promise<message.FileDirectory> {
+    return new Promise((resolve, reject) => {
+      if (!this._ws) { reject(new Error("no connection")); return; }
+      // 同一路径已有在途请求，先拒绝旧的
+      const existing = this._readDirTasks.get(path);
+      if (existing) {
+        clearTimeout(existing.timer);
+        existing.reject(new Error("superseded"));
+        this._readDirTasks.delete(path);
+      }
+      const timer = setTimeout(() => {
+        if (this._readDirTasks.has(path)) {
+          this._readDirTasks.delete(path);
+          reject(new Error("read dir timeout: " + path));
+        }
+      }, 10000);
+      this._readDirTasks.set(path, { resolve, reject, timer });
+      const action = message.FileAction.fromPartial({
+        read_dir: message.ReadDir.fromPartial({ path, include_hidden: includeHidden }),
+      });
+      console.debug('[sundesk] readRemoteDir:', path);
+      this._ws.sendMessage({ file_action: action });
+    });
+  }
+
+  /** 在远程创建目录 */
+  createRemoteDir(path: string) {
+    const action = message.FileAction.fromPartial({
+      create: message.FileDirCreate.fromPartial({ id: 0, path }),
+    });
+    this._ws?.sendMessage({ file_action: action });
   }
 
   getOptionMessage(): message.OptionMessage | undefined {
@@ -567,6 +653,14 @@ export default class Connection {
   handlePeerInfo(pi: message.PeerInfo) {
     localStorage.setItem('last_remote_id', this._id);
     this._peerInfo = pi;
+    if (this._mode === "file") {
+      // 文件传输模式：无视频流，不检查显示器，以 peer_info 为连接成功信号
+      console.debug('[sundesk] file transfer session ready, peer:', pi.username || pi.hostname || '');
+      this.msgbox("file-ready", "Connected", "");
+      globals.pushEvent("peer_info", pi);
+      this.setOption("info", pi);
+      return;
+    }
     if (pi.current_display > pi.displays.length) {
       pi.current_display = 0;
     }
