@@ -887,7 +887,7 @@ if (app) {
       fmLoad('');
       return;
     }
-    if (type == 're-input-password') {
+    if (type == 're-input-password' || type == 'session-login-re-password') {
       // 密码被拒重输（含 kiosk 自动密码不对）：清空输入框并弹框让用户手动输入
       passwordPromptActive = true;
       document.querySelector('input#password').value = '';
