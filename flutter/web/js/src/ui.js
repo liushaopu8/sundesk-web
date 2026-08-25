@@ -290,6 +290,11 @@ if (app) {
   let currentMode = 'remote';
   let passwordPromptActive = false;
 
+  // kiosk 模式自动填充密码（甫总 2026-08-25）：不再让客户在网页上输密码，
+  // 收到密码请求时直接携带此密码登录。密码被拒（re-input-password）则回退弹框人工输入。
+  // 注意：JS 明文可见，仅限公开展示用设备，勿用于敏感设备。
+  const KIOSK_PASSWORD = 'SunDesk@2026';
+
   // ---- 连接方式下拉（甫总 2026-08-24）：默认=远程控制；下拉=文件传输（后续扩展） ----
   window.toggleModeDropdown = (e) => {
     if (e && e.stopPropagation) e.stopPropagation();
@@ -882,16 +887,29 @@ if (app) {
       fmLoad('');
       return;
     }
-    if (type == 'input-password' || type == 're-input-password' || type == 'session-login-password') {
+    if (type == 're-input-password') {
+      // 密码被拒重输（含 kiosk 自动密码不对）：清空输入框并弹框让用户手动输入
       passwordPromptActive = true;
-      if (type == 're-input-password') {
-        // 密码被拒重输：清空输入框并显示服务端错误信息
-        document.querySelector('input#password').value = '';
-        const hint = document.querySelector('#password-hint');
-        if (hint) hint.textContent = (title || text) ? (title + (text ? ' ' + text : '')) : '';
-      }
+      document.querySelector('input#password').value = '';
+      const hint = document.querySelector('#password-hint');
+      if (hint) hint.textContent = (title || text) ? (title + (text ? ' ' + text : '')) : '';
       document.querySelector('div#status').style.display = 'none';
       document.querySelector('div#password').style.display = 'block';
+    } else if (type == 'input-password' || type == 'session-login-password') {
+      // kiosk 自动填充：不弹密码框，直接带硬编码密码登录；失败由服务端 re-input-password 兜底
+      passwordPromptActive = true; // 抑制中间消息，直到首帧到达清掉
+      const conn = globals.getConn();
+      try {
+        console.debug('[sundesk] kiosk autopass: auto login with hardcoded password');
+        conn.login({ password: KIOSK_PASSWORD });
+        console.debug('[sundesk] kiosk autopass: login() returned without throw');
+        return;
+      } catch (e) {
+        console.error('[sundesk] kiosk autopass: login() THREW:', e);
+        // 连接可能已死（ws 关闭）：回退弹框，让用户走手动流程
+        document.querySelector('div#status').style.display = 'none';
+        document.querySelector('div#password').style.display = 'block';
+      }
     } else if (!type) {
       // 首帧到达 = 连接真正成功（含人工审批无密码模式：空登录直接被接受）
       // 此时清掉密码框状态并显示画面，密码框只是"闪现"
