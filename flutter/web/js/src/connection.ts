@@ -975,6 +975,10 @@ export default class Connection {
     const msg = message.OptionMessage.fromPartial({});
     const q = this.getImageQualityEnum(this.getImageQuality(), true);
     const yes = message.OptionMessage_BoolOption.Yes;
+    // Web 客户端默认禁用音频（甫总 2026-08-25）：部分 Android 被控端在进入音频授权分支
+    // 后会异常断开 relay（code 1006，不回 login_response）。远程控制不需要语音，强制不请求音频。
+    msg.disable_audio = yes;
+    n += 1;
     if (q != undefined) {
       msg.image_quality = q;
       n += 1;
