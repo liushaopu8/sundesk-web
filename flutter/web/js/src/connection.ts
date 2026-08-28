@@ -153,7 +153,16 @@ export default class Connection {
     ws.sendRendezvous({ punch_hole_request });
     const msg = (await ws.next()) as rendezvous.RendezvousMessage;
     ws.close();
-    console.log(new Date() + ": Got relay response");
+    console.log(new Date() + ": Got rendezvous message:", JSON.stringify({
+      has_punch_hole_response: !!msg.punch_hole_response,
+      has_relay_response: !!msg.relay_response,
+      phr_failure: msg.punch_hole_response?.failure,
+      phr_other_failure: msg.punch_hole_response?.other_failure,
+      phr_relay_server: msg.punch_hole_response?.relay_server,
+      rr_version: msg.relay_response?.version,
+      rr_relay_server: msg.relay_response?.relay_server,
+      rr_refuse_reason: msg.relay_response?.refuse_reason,
+    }));
     const phr = msg.punch_hole_response;
     const rr = msg.relay_response;
     if (phr) {
@@ -1018,6 +1027,10 @@ export default class Connection {
     }
     if (vf.vp9s) {
       const dec = this._videoDecoder;
+      if (!dec) {
+        console.warn('[sundesk] video frame arrived before decoder ready, skipping');
+        return;
+      }
       var tm = new Date().getTime();
       var i = 0;
       const n = vf.vp9s?.frames.length;
@@ -1195,6 +1208,7 @@ export default class Connection {
     shift: Boolean,
     command: Boolean
   ) {
+    if (this._ws?._status !== 'open') return;
     const key_event = mapKey(name, globals.isDesktop());
     if (!key_event) return;
     if (alt && (name == "VK_MENU" || name == "RAlt")) {
@@ -1328,6 +1342,7 @@ export default class Connection {
     shift: Boolean = false,
     command: Boolean = false
   ) {
+    if (this._ws?._status !== 'open') return;
     const mouse_event = message.MouseEvent.fromPartial({
       mask,
       x,
@@ -1516,7 +1531,9 @@ function testDelay() {
   });
 }
 
-testDelay();
+// testDelay() is disabled: it connects to hardcoded hosts on module load,
+// causing confusing error logs and unnecessary WebSocket connections.
+// testDelay();
 
 function getDefaultUri(isRelay: Boolean = false): string {
   const host = localStorage.getItem("custom-rendezvous-server");
