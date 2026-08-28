@@ -1517,24 +1517,6 @@ export default class Connection {
   }
 }
 
-function testDelay() {
-  var nearest = "";
-  HOSTS.forEach((host) => {
-    const now = new Date().getTime();
-    new Websock(getrUriFromRs(host), true).open().then(() => {
-      console.log("latency of " + host + ": " + (new Date().getTime() - now));
-      if (!nearest) {
-        HOST = host;
-        localStorage.setItem("rendezvous-server", host);
-      }
-    });
-  });
-}
-
-// testDelay() is disabled: it connects to hardcoded hosts on module load,
-// causing confusing error logs and unnecessary WebSocket connections.
-// testDelay();
-
 function getDefaultUri(isRelay: Boolean = false): string {
   const host = localStorage.getItem("custom-rendezvous-server");
   return getrUriFromRs(host || HOST, isRelay);
