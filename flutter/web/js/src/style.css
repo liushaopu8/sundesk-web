@@ -288,3 +288,110 @@
   margin-top: 2px;
   word-break: break-all;
 }
+
+/* ============ 会话内悬浮工具栏（顶部居中胶囊） ============ */
+#session-bar {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-140%);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 0.25s ease;
+  pointer-events: none;
+}
+#session-bar.sb-show {
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+.sb-pill {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(30, 32, 38, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 4px 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+}
+.sb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.sb-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+.sb-btn.sb-on {
+  background: rgba(2, 78, 255, 0.55);
+  color: #fff;
+}
+.sb-btn.sb-close:hover {
+  background: rgba(220, 38, 38, 0.85);
+}
+.sb-sep {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.18);
+  margin: 0 4px;
+}
+.sb-menu {
+  display: none;
+  margin-top: 8px;
+  min-width: 220px;
+  max-width: 320px;
+  background: rgba(30, 32, 38, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+  text-align: left;
+}
+.sb-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sb-item:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.sb-item.sb-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.sb-item.sb-disabled:hover {
+  background: transparent;
+}
+.sb-check {
+  width: 14px;
+  flex: none;
+  color: #6ea8ff;
+  font-weight: bold;
+}
+.sb-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sb-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 5px 8px;
+}
