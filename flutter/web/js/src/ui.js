@@ -1072,6 +1072,70 @@ if (app) {
   window.sbRegisterMenu = SB.registerMenu;
   window.sbRefreshMenu = SB.refresh;
 
+  // ============ step2：会话菜单（Control / Display / Monitors） ============
+  const SB2_ICONS = {
+    control: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
+    display: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>',
+    monitors: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="2" rx="2"/><path d="M8 17h6"/><rect width="12" height="13" x="9" y="10" rx="2"/></svg>',
+  };
+
+  SB.registerMenu('monitors', SB2_ICONS.monitors, 'Select Monitor', () => {
+    const conn = globals.getConn();
+    if (!conn) return [];
+    const pi = conn._peerInfo;
+    const n = pi?.displays?.length || 0;
+    const items = [];
+    const isDesktopPeer = pi?.platform !== 'Android';
+    if (n > 1) {
+      items.push({ label: '全部显示器 All displays', checked: !pi.current_display || pi.current_display > n, keepOpen: true,
+        onClick: () => conn.switchDisplay(JSON.stringify({ value: Array.from({ length: n }, (_, i) => i + 1), isDesktop: isDesktopPeer })) });
+    }
+    for (let i = 0; i < n; i++) {
+      const d = pi.displays[i];
+      const num = i + 1;
+      const r = d.original_resolution;
+      const res = r ? `${r.width}×${r.height}` : `${d.width}×${d.height}`;
+      items.push({ label: `显示器 ${num}（${res}）`, checked: pi.current_display === num, keepOpen: true,
+        onClick: () => conn.switchDisplay(JSON.stringify({ value: [num], isDesktop: isDesktopPeer })) });
+    }
+    if (!n) items.push({ label: '（无显示器信息）', disabled: true });
+    return items;
+  });
+
+  SB.registerMenu('control', SB2_ICONS.control, 'Control Actions', () => {
+    const conn = globals.getConn();
+    if (!conn) return [];
+    const blocked = !!conn.getOption('block-input-state');
+    return [
+      { label: 'Ctrl + Alt + Del', onClick: () => { try { conn.ctrlAltDel(); } catch (e) { console.error('[sundesk] ctrlAltDel failed:', e); } } },
+      { divider: true },
+      { label: '仅查看 View only', checked: !!conn.getOption('view-only'), keepOpen: true,
+        onClick: () => conn.toggleOption('view-only') },
+      { label: '屏蔽远端输入 Block remote input', checked: blocked, keepOpen: true,
+        onClick: () => {
+          conn.toggleOption(blocked ? 'unblock-input' : 'block-input');
+          conn.setOption('block-input-state', !blocked);
+        } },
+      { label: '会话结束后锁定 Lock after end', checked: !!conn.getToggleOption('lock-after-session-end'), keepOpen: true,
+        onClick: () => conn.toggleOption('lock-after-session-end') },
+      { divider: true },
+      { label: '剪贴板同步 Clipboard sync', checked: !conn.getToggleOption('disable-clipboard'), keepOpen: true,
+        onClick: () => conn.toggleOption('disable-clipboard') },
+    ];
+  });
+
+  SB.registerMenu('display', SB2_ICONS.display, 'Display Settings', () => {
+    const conn = globals.getConn();
+    if (!conn) return [];
+    return [
+      { label: '显示远程光标 Show remote cursor', checked: !!conn.getToggleOption('show-remote-cursor'), keepOpen: true,
+        onClick: () => conn.toggleOption('show-remote-cursor') },
+      { label: '隐私模式 Privacy mode', checked: !!conn.getToggleOption('privacy-mode'), keepOpen: true,
+        onClick: () => conn.toggleOption('privacy-mode') },
+    ];
+  });  // Control Actions（参照 Flutter toolbarControls）
+  // Display Settings（参照 Flutter _DisplayMenu，音频开关暂不做：disable_audio 是当前规避 Android relay 崩溃的 workaround）
+  // 显示器选择（数据来自 peer_info.displays；Android 被控通常只有 1 个）
   window.cancel = () => {
     passwordPromptActive = false;
     SB.hide();
