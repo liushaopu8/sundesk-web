@@ -494,6 +494,14 @@ export default class Connection {
     this._ws?.sendMessage({ misc });
   }
 
+  sendChat(text: string) {
+    const value = text.trim();
+    if (!value || this._ws?._status !== 'open') return;
+    const chat_message = message.ChatMessage.fromPartial({ text: value });
+    const misc = message.Misc.fromPartial({ chat_message });
+    this._ws?.sendMessage({ misc });
+  }
+
   setMsgbox(callback: MsgboxCallback) {
     this._msgbox = callback;
   }

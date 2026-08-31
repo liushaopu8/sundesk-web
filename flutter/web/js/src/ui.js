@@ -7,7 +7,16 @@ import * as localfs from "./localfs";
 // TS 精简 UI 独立运行时必须自己补上，否则连接成功后 pushEvent/onRgba 会抛 ReferenceError。
 // 交互事件已通过 conn.setMsgbox/setDraw 走本地回调，这里基本是 no-op + 调试日志。
 window.onGlobalEvent = (message) => {
-  console.debug('[sundesk] onGlobalEvent:', message);
+  try {
+    const evt = typeof message === 'string' ? JSON.parse(message) : message;
+    if (evt?.name === 'chat') {
+      window.sundeskOnChat?.(evt.text ?? '');
+    } else {
+      console.debug('[sundesk] onGlobalEvent:', evt);
+    }
+  } catch (e) {
+    console.debug('[sundesk] onGlobalEvent:', message);
+  }
 };
 window.onRgba = () => {}; // TS UI 用自带 YUVCanvas player 绘制，忽略核心的 rgba 通道
 window.onRegisteredEvent = () => {};
@@ -68,6 +77,14 @@ if (app) {
   </div>
   <div id="session-bar">
     <div class="sb-pill" id="sb-pill"></div>
+    <div id="sb-chat" class="sb-chat" style="display: none;">
+      <div class="sb-chat-head">文字聊天 Chat</div>
+      <div id="sb-chat-msgs" class="sb-chat-msgs"></div>
+      <div class="sb-chat-input">
+        <input id="sb-chat-text" placeholder="输入消息..." />
+        <button type="button" onclick="sundeskSendChat()">发送</button>
+      </div>
+    </div>
     <div class="sb-menu" id="sb-menu"></div>
   </div>
   <div id="filemgr" style="display: none; text-align: left; max-width: 1440px; margin: 0 auto;">
@@ -1039,6 +1056,9 @@ if (app) {
       } else if (btn.dataset.act === 'close') {
         closeMenu();
         window.cancel();
+      } else if (btn.dataset.menu === 'chat') {
+        closeMenu();
+        window.sundeskToggleChatPanel?.();
       } else if (btn.dataset.menu) {
         openMenuPanel(btn.dataset.menu);
       }
@@ -1071,6 +1091,62 @@ if (app) {
   })();
   window.sbRegisterMenu = SB.registerMenu;
   window.sbRefreshMenu = SB.refresh;
+
+  // ============ step3：文字聊天（参照 Windows/Flutter ChatBox，协议为 Misc.chat_message） ============
+  const chatMessages = [];
+  const CHAT_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>';
+
+  function escChat(s) {
+    return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+
+  function renderChat() {
+    const box = document.getElementById('sb-chat-msgs');
+    if (!box) return;
+    box.innerHTML = chatMessages.map(m =>
+      `<div class="sb-chat-msg ${m.mine ? 'mine' : 'theirs'}"><b>${m.mine ? '我' : '远端'}</b><span>${escChat(m.text)}</span></div>`
+    ).join('');
+    box.scrollTop = box.scrollHeight;
+  }
+
+  window.sundeskToggleChatPanel = () => {
+    const panel = document.getElementById('sb-chat');
+    if (!panel) return;
+    const show = panel.style.display === 'none';
+    panel.style.display = show ? 'block' : 'none';
+    if (show) document.getElementById('sb-chat-text')?.focus();
+  };
+
+  window.sundeskOnChat = (text) => {
+    if (!text) return;
+    chatMessages.push({ text, mine: false });
+    renderChat();
+    const panel = document.getElementById('sb-chat');
+    if (panel) panel.style.display = 'block';
+    SB.show();
+  };
+
+  window.sundeskSendChat = () => {
+    const input = document.getElementById('sb-chat-text');
+    const text = input?.value.trim() || '';
+    if (!text) return;
+    const conn = globals.getConn();
+    if (!conn) return;
+    conn.sendChat(text);
+    chatMessages.push({ text, mine: true });
+    renderChat();
+    input.value = '';
+    input.focus();
+  };
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target?.id === 'sb-chat-text') {
+      e.preventDefault();
+      window.sundeskSendChat();
+    }
+  });
+
+  SB.registerMenu('chat', CHAT_ICON, '文字聊天 Chat', () => []);
 
   // ============ step2：会话菜单（Control / Display / Monitors） ============
   const SB2_ICONS = {
