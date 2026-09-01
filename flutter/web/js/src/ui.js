@@ -1038,9 +1038,14 @@ if (app) {
       scheduleHide.cancel();
       bar.classList.add('sb-show');
     }
+    function chatPanelOpen() {
+      const p = document.getElementById('sb-chat');
+      return !!p && p.style.display !== 'none';
+    }
     function scheduleHide() {
       scheduleHide.cancel();
-      if (pinned || openId) return;
+      // 聊天面板打开时也保持工具栏可见，避免输入时工具栏滑走
+      if (pinned || openId || chatPanelOpen()) return;
       hideTimer = setTimeout(() => bar.classList.remove('sb-show'), 700);
     }
     scheduleHide.cancel = () => { if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; } };
@@ -1114,7 +1119,10 @@ if (app) {
     if (!panel) return;
     const show = panel.style.display === 'none';
     panel.style.display = show ? 'block' : 'none';
-    if (show) document.getElementById('sb-chat-text')?.focus();
+    if (show) {
+      SB.show();
+      document.getElementById('sb-chat-text')?.focus();
+    }
   };
 
   window.sundeskOnChat = (text) => {
