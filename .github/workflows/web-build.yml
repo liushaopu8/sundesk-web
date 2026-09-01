@@ -3,7 +3,9 @@ name: Build Web Client
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    # 每个分支的每次 push 都自动构建（feature/*、fix/*、main 等），
+    # 这样推送到 feature/session-toolbar 等分支后能立刻在 Actions 产物里看到改动。
+    branches: ["**"]
     tags: ["*"]
   pull_request:
 
@@ -60,10 +62,21 @@ jobs:
           # path 用 pkg/* 通配符：GitHub artifact 下载解压后直接是 sundesk-web/ 文件夹
           # （upload-artifact 对通配符会自动展开一层，避免二次解压）
 
+      # 产物名带上分支名 + 运行号，避免不同分支/多次 push 的产物互相覆盖，
+      # 下载时一眼能看出是哪个分支的构建（如 sundesk-web-1.2.5-feature-session-toolbar-42）。
+      - name: Compute artifact name
+        id: art
+        run: |
+          REF="${GITHUB_REF_NAME}"            # 分支名或 tag 名
+          SAFE=$(echo "$REF" | tr '/ ' '--' | tr -cd 'A-Za-z0-9._-')
+          NAME="sundesk-web-${VERSION}-${SAFE}-${GITHUB_RUN_NUMBER}"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Artifact name: $NAME"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sundesk-web-${{ env.VERSION }}
+          name: ${{ steps.art.outputs.name }}
           path: pkg/*
 
       # GitHub Pages 部署已停用（2026-08-21）：Pages 是 https，浏览器强制 wss://，
