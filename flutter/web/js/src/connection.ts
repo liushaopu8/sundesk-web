@@ -308,7 +308,7 @@ export default class Connection {
         this.login();
       } else if (msg?.test_delay) {
         const test_delay = msg?.test_delay;
-        console.log('test delay: ', test_delay);
+        // console.log('test delay: ', test_delay);
         if (!test_delay.from_client) {
           this._ws?.sendMessage({ test_delay });
         }
@@ -517,11 +517,18 @@ export default class Connection {
     console.debug('[sundesk] login() called, has password input:', !!info?.password, ', stored password:', !!this._password);
     console.debug('[sundesk] login: salt =', typeof this._hash?.salt, ', challenge =', typeof this._hash?.challenge, ', ws open =', this._ws?._status === 'open');
     if (info?.password) {
+      // [sundesk-pwdiag] Log password length and hash fingerprints for first-connection debugging.
+      // We never log the raw password bytes.
+      const fp = (u: Uint8Array | undefined) => u && u.length ? Array.from(u.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join('') : 'none';
       const salt = this._hash?.salt;
+      const saltBytes = salt ? new TextEncoder().encode(salt) : undefined;
+      console.debug('[sundesk-pwdiag] connection.ts:login: web hash step0: received_salt_len=' + (salt?.length ?? 0) + ' received_salt_fp=' + fp(saltBytes));
       let p = hash([info.password, salt!]);
+      console.debug('[sundesk-pwdiag] connection.ts:login: web hash step1: pwd_len=' + info.password.length + ' salt_len=' + (salt?.length ?? 0) + ' h1_fp=' + fp(p));
       this._password = p;
       const challenge = this._hash?.challenge;
       p = hash([p, challenge!]);
+      console.debug('[sundesk-pwdiag] connection.ts:login: web hash step2: challenge_len=' + (challenge?.length ?? 0) + ' h2_fp=' + fp(p));
       this.msgbox("connecting", "Connecting...", "Logging in...");
       this._sendLoginMessage({ os_login: info.os_login, password: p });
     } else {
