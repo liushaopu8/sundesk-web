@@ -71,7 +71,6 @@ if (app) {
     <button id="cancel" onclick="cancel();">Cancel</button>
   </div>
   <div id="canvas" style="display: none;">
-    <button id="cancel" onclick="cancel();">Cancel</button>
     <canvas id="player"></canvas>
     <canvas id="test-yuv-decoder-canvas"></canvas>
   </div>
