@@ -1156,7 +1156,9 @@ export default class Connection {
           name = "audio";
           break;
         default:
-          return;
+          // 其他权限（File/Restart/Recording/BlockInput/PrivacyMode）web 端暂不需要处理，
+          // 但不能让 msgLoop 把 undefined 当成 false 而中断消息接收。
+          return true;
       }
       this.setPermission(name, p.enabled);
     } else if (misc.switch_display) {
