@@ -11,6 +11,14 @@ window.onGlobalEvent = (message) => {
     const evt = typeof message === 'string' ? JSON.parse(message) : message;
     if (evt?.name === 'chat') {
       window.sundeskOnChat?.(evt.text ?? '');
+    } else if (evt?.name === 'peer_info') {
+      // pushEvent 经 jsonfyForDart 把非字符串值 JSON.stringify 了，platform 实际是 '"Android"'
+      const platform = String(evt.platform ?? '').replace(/"/g, '');
+      const nav = window.sundeskMobileNav;
+      if (nav && platform === 'Android') nav.show();
+      else if (nav) nav.hide();
+      // 手机/键盘/显示器菜单的可见性依赖 peer_info，刷新胶囊
+      window.sbRefreshAll?.();
     } else {
       console.debug('[sundesk] onGlobalEvent:', evt);
     }
@@ -73,29 +81,20 @@ if (app) {
   <div id="canvas" style="display: none;">
     <canvas id="player"></canvas>
     <canvas id="test-yuv-decoder-canvas"></canvas>
-    <div id="nav-bar" class="nav-bar" title="移动端导航键（Back/Home/最近任务/音量/电源）">
+    <!-- 移动端悬浮导航条：对齐 Flutter Windows DraggableMobileActions：Back / Home / Recent + 隐藏箭头，可拖拽、位置持久化，仅 Android 被控端显示 -->
+    <div id="nav-bar" class="nav-bar" title="移动端导航键（Back/Home/最近任务）">
       <button class="nav-btn" type="button" data-nav="back" title="返回 Back">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
       </button>
       <button class="nav-btn" type="button" data-nav="home" title="主屏 Home">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
       </button>
       <button class="nav-btn" type="button" data-nav="recent" title="最近任务 Recent apps">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="14" x="3" y="4" rx="2"/><path d="M3 9h18"/></svg>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
       </button>
       <span class="nav-sep"></span>
-      <button class="nav-btn" type="button" data-nav="vol-down" title="音量- Volume down">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M16 9v6"/></svg>
-      </button>
-      <button class="nav-btn" type="button" data-nav="vol-up" title="音量+ Volume up">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M16 8a5 5 0 0 1 0 8"/><path d="M19.4 5.6a9 9 0 0 1 0 12.8"/></svg>
-      </button>
-      <span class="nav-sep"></span>
-      <button class="nav-btn nav-power" type="button" data-nav="power" title="电源 Power">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></svg>
-      </button>
-      <button class="nav-btn nav-hide" type="button" data-nav="hide" title="隐藏导航条（移到屏幕顶部边缘可唤回）">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+      <button class="nav-btn nav-hide" type="button" data-nav="hide" title="隐藏导航条（顶部工具条手机图标可唤回）">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg>
       </button>
     </div>
   </div>
@@ -964,6 +963,10 @@ if (app) {
       const hint = document.querySelector('#password-hint');
       if (hint) hint.textContent = '';
       document.querySelector('div#canvas').style.display = 'block';
+      {
+        const _cv0 = document.querySelector('div#canvas');
+        if (!_cv0.dataset.viewStyle) _cv0.dataset.viewStyle = globals.getConn()?.getZoomMode() || 'adaptive';
+      }
       document.querySelector('div#password').style.display = 'none';
       document.querySelector('div#status').style.display = 'none';
       SB.show();
@@ -1011,9 +1014,13 @@ if (app) {
     function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
     function renderPill() {
+      // order 越小越靠左；未指定按注册顺序排在后面
+      const list = Object.entries(menus)
+        .map(([id, m]) => ({ id, m }))
+        .filter(({ m }) => !m.visible || m.visible())
+        .sort((a, b) => (a.m.order ?? 100) - (b.m.order ?? 100));
       let html = '';
-      for (const id in menus) {
-        const m = menus[id];
+      for (const { id, m } of list) {
         html += `<button class="sb-btn" data-menu="${esc(id)}" title="${esc(m.title)}">${m.icon}</button>`;
       }
       html += `<span class="sb-sep"></span>`;
@@ -1090,6 +1097,11 @@ if (app) {
       } else if (btn.dataset.menu === 'chat') {
         closeMenu();
         window.sundeskToggleChatPanel?.();
+      } else if (btn.dataset.menu === 'mobile') {
+        // 手机图标：开关悬浮导航条（同 Windows toggle overlay）
+        const nav = window.sundeskMobileNav;
+        if (nav) nav.isShown() ? nav.hide() : nav.show();
+        closeMenu();
       } else if (btn.dataset.menu) {
         openMenuPanel(btn.dataset.menu);
       }
@@ -1111,35 +1123,103 @@ if (app) {
 
     renderPill();
     return {
-      registerMenu(id, icon, title, getItems) {
-        menus[id] = { icon, title, getItems };
+      registerMenu(id, icon, title, getItems, opts = {}) {
+        menus[id] = { icon, title, getItems, visible: opts.visible, order: opts.order };
         renderPill();
       },
       show() { bar.classList.add('sb-show'); scheduleHide(); },
       hide() { pinned = false; closeMenu(); bar.classList.remove('sb-show'); renderPill(); },
-      refresh() { renderOpenMenu(); },
+      refresh() { renderPill(); renderOpenMenu(); },
     };
   })();
   window.sbRegisterMenu = SB.registerMenu;
   window.sbRefreshMenu = SB.refresh;
+  window.sbRefreshAll = SB.refresh;
 
-  // ============ 移动端虚拟导航条（Back/Home/Recent/音量/电源，悬浮可隐藏） ============
-  // 按键协议对齐 Flutter 桌面端 input_model.dart mobileActions：
-  // Back/Home/Recent 走鼠标键，音量/电源走 ControlKey 77/78/79。
-  (() => {
+  // ============ 移动端悬浮导航条（对齐 Flutter Windows DraggableMobileActions） ============
+  // 仅被控端为 Android 时出现；Back/Home/Recent 三键 + 隐藏箭头；可拖拽到屏幕任意位置，
+  // 位置持久化到 localStorage（Windows 端存在 local option draggablePositionMobile）。
+  // 音量±/电源在顶部工具条 Keyboard 菜单中（同 Windows 键盘菜单 mobileActions 布局）。
+  const MobileNav = (() => {
     const bar = document.getElementById('nav-bar');
-    if (!bar) return;
-    // 隐藏后的唤回小把手
-    const fab = document.createElement('button');
-    fab.type = 'button';
-    fab.className = 'nav-fab';
-    fab.title = '显示导航条';
-    fab.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>';
-    fab.style.display = 'none';
-    bar.parentElement.appendChild(fab);
+    if (!bar) return null;
+    const POS_KEY = 'sundesk.mobileNav.pos';
+    let visible = false;
 
-    const hideBar = () => { bar.style.display = 'none'; fab.style.display = 'flex'; };
-    const showBar = () => { bar.style.display = 'flex'; fab.style.display = 'none'; };
+    function clampPos(x, y) {
+      const r = bar.getBoundingClientRect();
+      const w = r.width || 150, h = r.height || 40;
+      return {
+        x: Math.min(Math.max(0, x), window.innerWidth - w),
+        y: Math.min(Math.max(0, y), window.innerHeight - h),
+      };
+    }
+    function defaultPos() {
+      // Windows：水平居中，距底部 80px
+      const r = bar.getBoundingClientRect();
+      const w = r.width || 150, h = r.height || 40;
+      return { x: (window.innerWidth - w) / 2, y: window.innerHeight - h - 80 };
+    }
+    function applyPos(x, y) {
+      const p = clampPos(x, y);
+      bar.style.left = p.x + 'px';
+      bar.style.top = p.y + 'px';
+      bar.style.right = 'auto';
+      bar.style.bottom = 'auto';
+      bar.style.transform = 'none';
+      return p;
+    }
+    let saveTimer = null;
+    function persist(p) {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => localStorage.setItem(POS_KEY, p.x + ',' + p.y), 300);
+    }
+    function loadPos() {
+      const v = localStorage.getItem(POS_KEY);
+      if (v) {
+        const [x, y] = v.split(',').map(Number);
+        if (Number.isFinite(x) && Number.isFinite(y)) return applyPos(x, y);
+      }
+      return applyPos(defaultPos().x, defaultPos().y);
+    }
+
+    function show() {
+      if (visible) return;
+      visible = true;
+      bar.style.display = 'flex';
+      loadPos();
+    }
+    function hide() {
+      visible = false;
+      bar.style.display = 'none';
+    }
+    function isShown() { return visible; }
+
+    // ---- 拖拽（Pointer Events，触屏/鼠标通用；位移小于阈值视为点击） ----
+    let dragging = false, moved = false, startX = 0, startY = 0, origX = 0, origY = 0, curX = 0, curY = 0;
+    bar.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.nav-btn')) return; // 按钮自行处理
+      dragging = true; moved = false;
+      const r = bar.getBoundingClientRect();
+      startX = e.clientX; startY = e.clientY;
+      origX = r.left; origY = r.top; curX = r.left; curY = r.top;
+      bar.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    bar.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if (!moved && Math.hypot(dx, dy) < 6) return;
+      moved = true;
+      const p = applyPos(origX + dx, origY + dy);
+      curX = p.x; curY = p.y;
+    });
+    bar.addEventListener('pointerup', (e) => {
+      if (!dragging) return;
+      dragging = false;
+      if (moved) { persist({ x: curX, y: curY }); bar.dataset.dragged = '1'; setTimeout(() => delete bar.dataset.dragged, 300); }
+    });
+    bar.addEventListener('pointercancel', () => { dragging = false; });
 
     bar.addEventListener('click', (e) => {
       const btn = e.target.closest('.nav-btn');
@@ -1147,20 +1227,22 @@ if (app) {
       e.preventDefault();
       e.stopPropagation();
       const act = btn.dataset.nav;
-      if (act === 'hide') { hideBar(); return; }
+      if (act === 'hide') { hide(); return; }
       const conn = globals.getConn();
       if (!conn || conn._ws?._status !== 'open') return;
       switch (act) {
         case 'back': conn.mobileBack(); break;
         case 'home': conn.mobileHome(); break;
         case 'recent': conn.mobileApps(); break;
-        case 'vol-up': conn.mobileVolumeUp(); break;
-        case 'vol-down': conn.mobileVolumeDown(); break;
-        case 'power': conn.mobilePower(); break;
       }
     });
-    fab.addEventListener('click', (e) => { e.stopPropagation(); showBar(); });
+
+    window.addEventListener('resize', () => { if (visible) { const v = (localStorage.getItem(POS_KEY) || '').split(','); if (v.length === 2) applyPos(+v[0], +v[1]); } });
+    // 初始隐藏，进入 Android 被控会话后由 peer_info 触发显示
+    bar.style.display = 'none';
+    return { show, hide, isShown };
   })();
+  window.sundeskMobileNav = MobileNav;
 
   // ============ step3：文字聊天（参照 Windows/Flutter ChatBox，协议为 Misc.chat_message） ============
   const chatMessages = [];
@@ -1219,14 +1301,23 @@ if (app) {
     }
   });
 
-  SB.registerMenu('chat', CHAT_ICON, '文字聊天 Chat', () => []);
+  SB.registerMenu('chat', CHAT_ICON, '文字聊天 Chat', () => [], { order: 80 });
 
-  // ============ step2：会话菜单（Control / Display / Monitors） ============
+  // ============ 会话菜单（对齐 Flutter Windows remote_toolbar） ============
+  // 顺序同 Windows：手机动作 · 显示器 · Control · Display · Keyboard（Pin/Close 固定在胶囊尾部）
   const SB2_ICONS = {
+    mobile: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>',
     control: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
     display: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>',
+    keyboard: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M8 13h8"/></svg>',
     monitors: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="2" rx="2"/><path d="M8 17h6"/><rect width="12" height="13" x="9" y="10" rx="2"/></svg>',
   };
+
+  const isAndroidPeer = () => globals.getConn()?._peerInfo?.platform === 'Android';
+
+  // 手机图标：开关可拖拽悬浮导航条（对齐 Windows _MobileActionMenu，仅 Android 被控）
+  SB.registerMenu('mobile', SB2_ICONS.mobile, 'Mobile Actions（导航键悬浮条）', () => [],
+    { visible: isAndroidPeer, order: 30 });
 
   SB.registerMenu('monitors', SB2_ICONS.monitors, 'Select Monitor', () => {
     const conn = globals.getConn();
@@ -1249,14 +1340,32 @@ if (app) {
     }
     if (!n) items.push({ label: '（无显示器信息）', disabled: true });
     return items;
-  });
+  }, { visible: () => (globals.getConn()?._peerInfo?.displays?.length || 0) > 1, order: 40 });
+
+  // ---- 传输文件：同 ID 以文件传输模式新开标签页（对齐 Windows Control 菜单 Transfer file） ----
+  function openFileTransferTab() {
+    const id = localStorage.getItem('id') || document.querySelector('#id')?.value || '';
+    const host = localStorage.getItem('custom-rendezvous-server') || document.querySelector('#host')?.value || '';
+    const url = new URL(window.location.href);
+    url.hash = '';
+    url.search = '';
+    // 通过 URL 参数告知新标签页直接进入文件传输（main 初始化后读取）
+    url.searchParams.set('id', id);
+    url.searchParams.set('mode', 'file');
+    if (host) url.searchParams.set('host', host);
+    window.open(url.toString(), '_blank', 'noopener');
+  }
 
   SB.registerMenu('control', SB2_ICONS.control, 'Control Actions', () => {
     const conn = globals.getConn();
     if (!conn) return [];
     const blocked = !!conn.getOption('block-input-state');
-    return [
+    const items = [
+      { label: '刷新视频 Refresh', onClick: () => { try { conn.refresh(); } catch (e) { console.error('[sundesk] refresh failed:', e); } } },
+      { label: '传输文件 Transfer file', onClick: openFileTransferTab },
+      { divider: true },
       { label: 'Ctrl + Alt + Del', onClick: () => { try { conn.ctrlAltDel(); } catch (e) { console.error('[sundesk] ctrlAltDel failed:', e); } } },
+      { label: '锁屏 Insert Lock（需新 APK）', onClick: () => { try { conn.lockScreen(); } catch (e) { console.error('[sundesk] lockScreen failed:', e); } } },
       { divider: true },
       { label: '仅查看 View only', checked: !!conn.getOption('view-only'), keepOpen: true,
         onClick: () => conn.toggleOption('view-only') },
@@ -1271,23 +1380,60 @@ if (app) {
       { label: '剪贴板同步 Clipboard sync', checked: !conn.getToggleOption('disable-clipboard'), keepOpen: true,
         onClick: () => conn.toggleOption('disable-clipboard') },
     ];
-  });
+    return items;
+  }, { order: 50 });
 
   SB.registerMenu('display', SB2_ICONS.display, 'Display Settings', () => {
     const conn = globals.getConn();
     if (!conn) return [];
+    const zoom = conn.getZoomMode();
+    const quality = conn.getImageQuality() || 'balanced';
+    const zoomItem = (value, label) => ({
+      label, checked: zoom === value, keepOpen: true,
+      onClick: () => { conn.setZoomMode(value); SB.refresh(); },
+    });
+    const qItem = (value, label) => ({
+      label, checked: quality === value, keepOpen: true,
+      onClick: () => { conn.setImageQuality(value); SB.refresh(); },
+    });
     return [
+      { label: '缩放模式 Scale', disabled: true },
+      zoomItem('adaptive', '适应窗口 Adapt window'),
+      zoomItem('original', '原始尺寸 Original size'),
+      { divider: true },
+      { label: '画质 Image quality', disabled: true },
+      qItem('best', 'Best quality'),
+      qItem('balanced', 'Balanced'),
+      qItem('low', 'Optimal speed'),
+      { divider: true },
       { label: '显示远程光标 Show remote cursor', checked: !!conn.getToggleOption('show-remote-cursor'), keepOpen: true,
         onClick: () => conn.toggleOption('show-remote-cursor') },
       { label: '隐私模式 Privacy mode', checked: !!conn.getToggleOption('privacy-mode'), keepOpen: true,
         onClick: () => conn.toggleOption('privacy-mode') },
     ];
-  });  // Control Actions（参照 Flutter toolbarControls）
-  // Display Settings（参照 Flutter _DisplayMenu，音频开关暂不做：disable_audio 是当前规避 Android relay 崩溃的 workaround）
+  }, { order: 60 });
+
+  // Keyboard 菜单：对齐 Windows _KeyboardMenu 尾部的 mobileActions（Back/Home/Apps/Volume±/Power）。
+  // 传统/翻译/浏览模式、输入源选择是中文 IME 相关项，web 不支持，不显示。
+  SB.registerMenu('keyboard', SB2_ICONS.keyboard, 'Keyboard', () => {
+    const conn = globals.getConn();
+    if (!conn) return [];
+    const fire = (fn) => () => { try { fn.call(conn); } catch (e) { console.error('[sundesk] mobile action failed:', e); } };
+    return [
+      { label: '返回 Back', onClick: fire(conn.mobileBack) },
+      { label: '主屏 Home', onClick: fire(conn.mobileHome) },
+      { label: '最近任务 Apps', onClick: fire(conn.mobileApps) },
+      { divider: true },
+      { label: '音量+ Volume up', onClick: fire(conn.mobileVolumeUp) },
+      { label: '音量− Volume down', onClick: fire(conn.mobileVolumeDown) },
+      { label: '电源 Power（关机/重启菜单）', onClick: fire(conn.mobilePower) },
+    ];
+  }, { visible: isAndroidPeer, order: 70 });
   // 显示器选择（数据来自 peer_info.displays；Android 被控通常只有 1 个）
   window.cancel = () => {
     passwordPromptActive = false;
     SB.hide();
+    window.sundeskMobileNav?.hide();
     globals.close();
     document.querySelector('div#connect').style.display = 'block';
     document.querySelector('div#password').style.display = 'none';

@@ -1565,6 +1565,17 @@ export default class Connection {
     }
   }
 
+  getZoomMode(): string {
+    return this.getOption('view-style') || 'adaptive';
+  }
+
+  // 画面缩放（纯前端，对齐 Windows viewStyle：adaptive 适应窗口 / original 原始尺寸）
+  setZoomMode(mode: string) {
+    this.setOption('view-style', mode);
+    const cv = document.getElementById('canvas');
+    if (cv) cv.dataset.viewStyle = mode;
+  }
+
   setImageQuality(value: string) {
     this.setOption("image-quality", value);
     const image_quality = this.getImageQualityEnum(value, false);
