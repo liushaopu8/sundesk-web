@@ -16,9 +16,9 @@
 }
 .fm-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr minmax(260px, 0.85fr);
+  grid-template-columns: 3fr 3fr 2fr;
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
   text-align: left;
 }
 .fm-pane {

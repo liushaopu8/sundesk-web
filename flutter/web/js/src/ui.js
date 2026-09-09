@@ -116,13 +116,14 @@ if (app) {
       <div><button onclick="cancel();">断开</button></div>
     </div>
     <div class="fm-grid">
-      <!-- 本地栏 -->
+      <!-- 本地栏（对齐 Flutter Windows FileManagerView：栏头平台图标 + 名称，面包屑 + 工具栏 + 列表） -->
       <div class="fm-pane">
-        <div class="fm-pane-title">本地计算机</div>
+        <div class="fm-pane-head"><span class="fm-plat fm-plat-local"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg></span><span class="fm-pane-name">本地计算机</span></div>
+        <div class="fm-crumb" id="loc-crumb"></div>
         <div class="fm-toolbar">
           ${iconBtn('back', 'locBack()', '返回')}
           ${iconBtn('up', 'locUp()', '父目录')}
-          <input type="search" id="loc-search" placeholder="本地路径" oninput="locApplyFilter()" />
+          <input type="search" id="loc-search" placeholder="搜索/跳转路径" oninput="locApplyFilter()" />
           <button class="fm-pick" onclick="locPick()" title="选择/授权本地文件夹（Chrome/Edge）">${ICONS.folder.replace('width="18"', 'width="14"')} 选择文件夹</button>
           ${iconBtn('refresh', 'locRefresh()', '刷新')}
         </div>
@@ -147,11 +148,12 @@ if (app) {
       </div>
       <!-- 远程栏 -->
       <div class="fm-pane">
-        <div class="fm-pane-title">远程计算机</div>
+        <div class="fm-pane-head"><span class="fm-plat fm-plat-android"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg></span><span class="fm-pane-name">远程计算机</span></div>
+        <div class="fm-crumb" id="fm-crumb"></div>
         <div class="fm-toolbar">
           ${iconBtn('back', 'fmBack()', '返回')}
           ${iconBtn('up', 'fmUp()', '父目录')}
-          <input type="search" id="fm-search" placeholder="远程路径" oninput="fmApplyFilter()" />
+          <input type="search" id="fm-search" placeholder="搜索/跳转路径" oninput="fmApplyFilter()" />
           ${iconBtn('refresh', 'fmRefresh()', '刷新')}
         </div>
         <div class="fm-actions">
@@ -173,10 +175,10 @@ if (app) {
         </table>
         <div class="fm-status" id="fm-status"></div>
       </div>
-      <!-- 传输栏（仅传输时显示） -->
-      <div class="fm-pane" id="fm-transfers-pane" style="display: none;">
+      <!-- 传输栏（对齐 Windows statusList，常驻第三栏） -->
+      <div class="fm-pane" id="fm-transfers-pane">
         <div class="fm-pane-title">传输中</div>
-        <div id="filemgr-transfers"></div>
+        <div id="filemgr-transfers"><div class="fm-transfers-empty">暂无传输任务</div></div>
       </div>
     </div>
   </div>
@@ -428,8 +430,58 @@ if (app) {
     }
   }
 
+  // ---- 面包屑（对齐 Windows buildBread：路径段可点逐级跳转） ----
+  function crumbHtml(segs, onClickName) {
+    if (!segs.length) return '';
+    let html = '';
+    segs.forEach((s, i) => {
+      if (i > 0) html += '<span class="fm-crumb-sep">/</span>';
+      if (i === segs.length - 1) {
+        html += '<span class="fm-crumb-cur" title="' + escAttr(s) + '">' + escHtml(s) + '</span>';
+      } else {
+        html += '<a data-crumb-idx="' + i + '">' + escHtml(s) + '</a>';
+      }
+    });
+    return html;
+  }
+  function escHtml(s) { return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+  function escAttr(s) { return escHtml(s).replace(/"/g, '&quot;'); }
+
+  function renderFmCrumb() {
+    const box = document.querySelector('#fm-crumb');
+    if (!box) return;
+    if (!fmPath) { box.innerHTML = ''; return; }
+    const segs = fmPath.split(/[\\/]/).filter(Boolean);
+    box.innerHTML = '<a data-crumb-root="1" title="根目录">⌂</a>' + (segs.length ? '<span class="fm-crumb-sep">/</span>' : '') + crumbHtml(segs);
+    box.querySelectorAll('a[data-crumb-idx]').forEach(a => a.onclick = () => {
+      const idx = Number(a.dataset.crumbIdx);
+      const isWinDrive = /^[A-Za-z]:$/.test(segs[0]);
+      let p;
+      if (isWinDrive) p = segs[0] + '\\' + segs.slice(1, idx + 1).join('\\');
+      else p = '/' + segs.slice(0, idx + 1).join('/');
+      fmLoad(p);
+    });
+    const root = box.querySelector('a[data-crumb-root]');
+    if (root) root.onclick = () => fmLoad('/');
+  }
+
+  function renderLocCrumb() {
+    const box = document.querySelector('#loc-crumb');
+    if (!box) return;
+    const rootName = locHandle ? (locHandle.name || '已授权目录') : '本地';
+    const segs = locPath.slice();
+    box.innerHTML = '<a data-loc-root="1" title="授权根目录">⌂ ' + escHtml(rootName) + '</a>' + (segs.length ? '<span class="fm-crumb-sep">/</span>' : '') + crumbHtml(segs);
+    box.querySelectorAll('a[data-crumb-idx]').forEach(a => a.onclick = () => {
+      locPath = locPath.slice(0, Number(a.dataset.crumbIdx) + 1);
+      locSelected.clear(); locRefresh();
+    });
+    const root = box.querySelector('a[data-loc-root]');
+    if (root) root.onclick = () => { locPath = []; locSelected.clear(); locRefresh(); };
+  }
+
   function fmRender() {
     // 当前路径作为搜索框占位提示（甫总 2026-08-24）
+    renderFmCrumb();
     const search = document.querySelector('#fm-search');
     if (search) search.placeholder = fmPath || '/';
     const tbody = document.querySelector('#fm-list');
@@ -620,6 +672,7 @@ if (app) {
 
   function locRender() {
     // 当前路径作为搜索框占位提示（甫总 2026-08-24）
+    renderLocCrumb();
     const search = document.querySelector('#loc-search');
     if (search) search.placeholder = locCrumb();
     const tbody = document.querySelector('#loc-list');
@@ -820,20 +873,29 @@ if (app) {
   let transferCount = 0;
 
   function refreshTransfersPane() {
-    const pane = document.querySelector('#fm-transfers-pane');
-    if (pane) pane.style.display = transferCount > 0 ? 'block' : 'none';
+    // 对齐 Windows：传输栏常驻；无任务时显示占位
+    const box = document.querySelector('#filemgr-transfers');
+    if (box && transferCount === 0) {
+      box.innerHTML = '<div class="fm-transfers-empty">暂无传输任务</div>';
+    }
   }
   function ensureTransferRow(id, name, kind) {
     transferCount++;
-    refreshTransfersPane();
     let row = document.querySelector('#transfer-' + id);
     if (row) { row.querySelector('.t-name').textContent = name; return row; }
+    const empty = document.querySelector('#filemgr-transfers .fm-transfers-empty');
+    if (empty) empty.remove();
+    // 方向箭头对齐 Windows statusList getIcon：上传=向上，下载=向下
+    const arrow = kind === 'up'
+      ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>'
+      : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>';
     row = document.createElement('div');
     row.id = 'transfer-' + id;
     row.className = 'fm-transfer-row';
     row.innerHTML =
       '<div style="display:flex;justify-content:space-between;gap:6px;align-items:center;">' +
-      '<span class="t-name" style="word-break:break-all;"></span>' +
+      '<span class="t-dir" style="color:#024eff;display:inline-flex;">' + arrow + '</span>' +
+      '<span class="t-name" style="word-break:break-all;flex:1;"></span>' +
       '<span class="t-pct" style="white-space:nowrap;">0%</span>' +
       '<button class="t-cancel" title="取消">✕</button></div>' +
       '<div class="t-bar-wrap"><div class="t-bar" style="width:0%;"></div></div>' +
@@ -847,6 +909,7 @@ if (app) {
       row.querySelector('.t-cancel').disabled = true;
     };
     document.querySelector('#filemgr-transfers').appendChild(row);
+    refreshTransfersPane();
     return row;
   }
   function updateTransferRow(id, name, received, total) {
@@ -860,7 +923,6 @@ if (app) {
   }
   function finishTransferRow(id, name, ok, errMsg) {
     transferCount = Math.max(0, transferCount - 1);
-    refreshTransfersPane();
     const row = document.querySelector('#transfer-' + id);
     if (!row) return;
     // 用户主动取消：保持「已取消」状态，不被 reject 的失败提示覆盖
