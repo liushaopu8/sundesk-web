@@ -73,6 +73,31 @@ if (app) {
   <div id="canvas" style="display: none;">
     <canvas id="player"></canvas>
     <canvas id="test-yuv-decoder-canvas"></canvas>
+    <div id="nav-bar" class="nav-bar" title="移动端导航键（Back/Home/最近任务/音量/电源）">
+      <button class="nav-btn" type="button" data-nav="back" title="返回 Back">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+      </button>
+      <button class="nav-btn" type="button" data-nav="home" title="主屏 Home">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
+      </button>
+      <button class="nav-btn" type="button" data-nav="recent" title="最近任务 Recent apps">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="14" x="3" y="4" rx="2"/><path d="M3 9h18"/></svg>
+      </button>
+      <span class="nav-sep"></span>
+      <button class="nav-btn" type="button" data-nav="vol-down" title="音量- Volume down">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M16 9v6"/></svg>
+      </button>
+      <button class="nav-btn" type="button" data-nav="vol-up" title="音量+ Volume up">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M16 8a5 5 0 0 1 0 8"/><path d="M19.4 5.6a9 9 0 0 1 0 12.8"/></svg>
+      </button>
+      <span class="nav-sep"></span>
+      <button class="nav-btn nav-power" type="button" data-nav="power" title="电源 Power">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></svg>
+      </button>
+      <button class="nav-btn nav-hide" type="button" data-nav="hide" title="隐藏导航条（移到屏幕顶部边缘可唤回）">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+      </button>
+    </div>
   </div>
   <div id="session-bar">
     <div class="sb-pill" id="sb-pill"></div>
@@ -131,7 +156,7 @@ if (app) {
           ${iconBtn('refresh', 'fmRefresh()', '刷新')}
         </div>
         <div class="fm-actions">
-          <button class="fm-primary" onclick="fmReceive()" title="下载所选到本地">${ICONS.receive.replace('width="18"', 'width="14"')} 接收</button>
+          <button class="fm-primary" onclick="fmReceive()" title="发送所选到本地当前目录">发送 ${ICONS.send.replace('width="18"', 'width="14"')}</button>
           ${iconBtn('home', 'fmHome()', '默认目录')}
           ${iconBtn('plus', 'fmMkdir()', '新建文件夹')}
           ${iconBtn('trash', 'fmDelete()', '删除所选')}
@@ -862,15 +887,17 @@ if (app) {
     conn.onUploadProgress = (jobId, fileName, sent, total) => {
       updateTransferRow(jobId, fileName, sent, total);
     };
-    // 下载完成保存：本地已授权 → 写入授权目录（保留相对路径）；否则返回 false 走浏览器下载
+    // 下载完成保存：本地已授权 → 写入【当前浏览的本地目录】（不是授权根目录）；
+    // 未授权则返回 false，走浏览器下载（保留原文件名）。
     conn.onDownloadFile = async (jobId, relPath, blob) => {
       if (!locHandle) return false;
-      const parts = relPath.split('/').filter(Boolean);
+      const parts = [...locPath, ...relPath.split('/').filter(Boolean)];
       if (!parts.length) return false;
       const ok = await localfs.writeFile(locHandle, parts, new Uint8Array(await blob.arrayBuffer()));
       if (ok) {
         const row = document.querySelector('#transfer-' + jobId);
         if (row) row.querySelector('.t-meta').textContent = '已保存到本地: ' + parts.join('/');
+        locRefresh();
       }
       return ok;
     };
@@ -1095,6 +1122,45 @@ if (app) {
   })();
   window.sbRegisterMenu = SB.registerMenu;
   window.sbRefreshMenu = SB.refresh;
+
+  // ============ 移动端虚拟导航条（Back/Home/Recent/音量/电源，悬浮可隐藏） ============
+  // 按键协议对齐 Flutter 桌面端 input_model.dart mobileActions：
+  // Back/Home/Recent 走鼠标键，音量/电源走 ControlKey 77/78/79。
+  (() => {
+    const bar = document.getElementById('nav-bar');
+    if (!bar) return;
+    // 隐藏后的唤回小把手
+    const fab = document.createElement('button');
+    fab.type = 'button';
+    fab.className = 'nav-fab';
+    fab.title = '显示导航条';
+    fab.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>';
+    fab.style.display = 'none';
+    bar.parentElement.appendChild(fab);
+
+    const hideBar = () => { bar.style.display = 'none'; fab.style.display = 'flex'; };
+    const showBar = () => { bar.style.display = 'flex'; fab.style.display = 'none'; };
+
+    bar.addEventListener('click', (e) => {
+      const btn = e.target.closest('.nav-btn');
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const act = btn.dataset.nav;
+      if (act === 'hide') { hideBar(); return; }
+      const conn = globals.getConn();
+      if (!conn || conn._ws?._status !== 'open') return;
+      switch (act) {
+        case 'back': conn.mobileBack(); break;
+        case 'home': conn.mobileHome(); break;
+        case 'recent': conn.mobileApps(); break;
+        case 'vol-up': conn.mobileVolumeUp(); break;
+        case 'vol-down': conn.mobileVolumeDown(); break;
+        case 'power': conn.mobilePower(); break;
+      }
+    });
+    fab.addEventListener('click', (e) => { e.stopPropagation(); showBar(); });
+  })();
 
   // ============ step3：文字聊天（参照 Windows/Flutter ChatBox，协议为 Misc.chat_message） ============
   const chatMessages = [];

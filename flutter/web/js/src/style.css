@@ -472,3 +472,74 @@
 .sb-chat-input button:hover {
   background: rgba(2, 78, 255, 0.85);
 }
+
+/* ============ 移动端虚拟导航条（底部居中悬浮，可隐藏） ============ */
+.nav-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(30, 32, 38, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 4px 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+}
+.nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.nav-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+.nav-btn:active {
+  background: rgba(2, 78, 255, 0.55);
+  color: #fff;
+}
+.nav-btn.nav-power:hover {
+  background: rgba(220, 38, 38, 0.75);
+}
+.nav-btn.nav-hide {
+  width: 28px;
+  height: 28px;
+  margin-left: 2px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.nav-sep {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.18);
+  margin: 0 4px;
+}
+.nav-fab {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 9998;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(30, 32, 38, 0.92);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+}
+.nav-fab:hover { color: #fff; background: rgba(2, 78, 255, 0.75); }

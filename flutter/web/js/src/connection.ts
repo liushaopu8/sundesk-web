@@ -760,11 +760,14 @@ export default class Connection {
   }
 
   handleDownloadDone(job: DownloadJob, fileNum: number) {
+    // 注意：服务端读完最后一个文件后 file_num 已自增（单文件时 done.file_num=1），
+    // 不能直接用作 entries 下标，否则取不到原文件名会退化成 download_<id>_<n>。
+    // 以 digest 到达时记录的 currentFileNum（0 基）为准。
     if (job.chunks.length > 0) {
-      this.saveDownloadedFile(job, fileNum);
+      this.saveDownloadedFile(job, job.currentFileNum);
     }
     // 最后一个文件：完成整个任务（服务端只在全部读完后发一次 done）
-    if (fileNum >= job.entries.length - 1) {
+    if (fileNum >= job.entries.length) {
       job.resolve();
       this._downloads.delete(job.id);
     }
@@ -1339,6 +1342,53 @@ export default class Connection {
       control_key: message.ControlKey.LockScreen,
     });
     this._ws?.sendMessage({ key_event });
+  }
+
+  // ============ 移动端被控（Android）导航/电源键 ============
+  // 与 Flutter Windows/桌面端 input_model.dart 的 mobileActions 完全同协议：
+  // - Back/Home/Apps 走鼠标键：back 键抬起、中键快按=Home、中键长按=Recent
+  //   （Android InputService.kt: BACK_UP=66, WHEEL_BUTTON_DOWN=33/UP=34, 长按 200ms）
+  // - 音量/电源走 ControlKey 77/78/79（被控端映射 KEYCODE_VOLUME_*/POWER）
+  /** 返回：鼠标侧键 back，down(65)+up(66) */
+  mobileBack() {
+    this.inputMouse(65);          // (BUTTON_BACK(0x08) << 3) | BUTTON_DOWN(1)
+    this.inputMouse(66);          // (BUTTON_BACK << 3) | BUTTON_UP → GLOBAL_ACTION_BACK
+  }
+  /** Home：鼠标中键快按 */
+  mobileHome() {
+    this.inputMouse(1 << 2 | 1);  // WHEEL_BUTTON_DOWN = 33
+    this.inputMouse(1 << 2 | 2);  // WHEEL_BUTTON_UP = 34
+  }
+  /** 最近任务：鼠标中键按住 500ms（桌面端取值；被控端 200ms 即触发 RECENTS） */
+  async mobileApps() {
+    this.inputMouse(1 << 2 | 1);
+    await sleep(500);
+    this.inputMouse(1 << 2 | 2);
+  }
+  /**
+   * 发送移动端控制键的按下+抬起（对齐桌面端 tapHidKey：down → 100ms → up）。
+   * 被控端音量只在 ACTION_DOWN 生效，电源只在 ACTION_UP 生效，所以两条都要发。
+   */
+  async sendControlKeyPress(controlKey: message.ControlKey) {
+    const send = (down: boolean) => this._ws?.sendMessage({
+      key_event: message.KeyEvent.fromPartial({
+        mode: message.KeyboardMode.Translate,
+        down,
+        control_key: controlKey,
+      }),
+    });
+    send(true);
+    await sleep(100);
+    send(false);
+  }
+  mobileVolumeUp() {
+    this.sendControlKeyPress(77 as message.ControlKey);   // ControlKey.VolumeUp
+  }
+  mobileVolumeDown() {
+    this.sendControlKeyPress(78 as message.ControlKey);   // ControlKey.VolumeDown
+  }
+  mobilePower() {
+    this.sendControlKeyPress(79 as message.ControlKey);   // ControlKey.Power
   }
 
   getMod(alt: Boolean, ctrl: Boolean, shift: Boolean, command: Boolean) {
