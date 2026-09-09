@@ -615,6 +615,8 @@ export default class Connection {
       const job = this._downloads.get(dg.id);
       if (job && !dg.is_upload) {
         const idx = dg.file_num as number;
+        console.info('[sundesk-dl] job', dg.id, 'digest file#', idx, 'serverSize=', dg.file_size,
+          'name=', job.entries[idx]?.name, 'compressedHint');
         // 多文件下载：进入下一个文件前，先把上一个文件存盘（服务端 digest 按文件顺序到达）
         if (idx > 0) {
           const prev = idx - 1;
@@ -726,7 +728,7 @@ export default class Connection {
         id, path, file_num: 0, include_hidden: false,
       }),
     });
-    console.debug('[sundesk] download request:', path, 'job', id);
+    console.info('[sundesk-dl] download START job', id, 'path=', path);
     this._ws?.sendMessage({ file_action: action });
     return { id, promise };
   }
@@ -736,7 +738,8 @@ export default class Connection {
     if (!job) return;
     job.entries = d.entries || [];
     job.path = d.path;
-    console.debug('[sundesk] download file list:', job.entries.length, 'entries at', d.path);
+    console.info('[sundesk-dl] job', d.id, 'file list:', job.entries.length, 'entries at', d.path,
+      job.entries.map(e => e.name + '(' + e.size + ')'));
     // 等待服务端发 digest；空目录直接完成
     if (job.entries.length === 0) {
       job.resolve();
@@ -756,10 +759,16 @@ export default class Connection {
     job.received += data.length;
     const name = job.entries[b.file_num as number]?.name || ('file_' + b.file_num);
     const total = job.entries[b.file_num as number]?.size || 0;
+    if (job.received === data.length || job.received >= total) {
+      console.info('[sundesk-dl] job', job.id, 'file#', b.file_num, 'blocks:',
+        job.chunks.length, 'got', job.received, '/', total, b.compressed ? '(compressed)' : '');
+    }
     this.onDownloadProgress?.(job.id, name, job.received, total);
   }
 
   handleDownloadDone(job: DownloadJob, fileNum: number) {
+    console.info('[sundesk-dl] job', job.id, 'DONE file_num=', fileNum,
+      'entries=', job.entries.length, 'pendingChunks=', job.chunks.length);
     // 注意：服务端读完最后一个文件后 file_num 已自增（单文件时 done.file_num=1），
     // 不能直接用作 entries 下标，否则取不到原文件名会退化成 download_<id>_<n>。
     // 以 digest 到达时记录的 currentFileNum（0 基）为准。
@@ -783,11 +792,12 @@ export default class Connection {
     if (this.onDownloadFile) {
       try {
         if (await this.onDownloadFile(job.id, relPath, blob)) {
-          console.debug('[sundesk] downloaded to local folder:', relPath, blob.size, 'bytes');
+          console.info('[sundesk-dl] job', job.id, 'saved to LOCAL folder:', relPath, blob.size, 'bytes');
           return;
         }
+        console.warn('[sundesk-dl] job', job.id, 'onDownloadFile returned false -> browser fallback for', relPath);
       } catch (e) {
-        console.warn('[sundesk] local save failed, fallback to browser download', e);
+        console.warn('[sundesk-dl] local save failed, fallback to browser download', e);
       }
     }
     // 兜底：浏览器下载（relPath 可能是相对路径，取文件名）
@@ -1351,19 +1361,24 @@ export default class Connection {
   // - 音量/电源走 ControlKey 77/78/79（被控端映射 KEYCODE_VOLUME_*/POWER）
   /** 返回：鼠标侧键 back，down(65)+up(66) */
   mobileBack() {
+    console.info('[sundesk-nav] back: send mouse 65(down)+66(up), ws=', this._ws?._status);
     this.inputMouse(65);          // (BUTTON_BACK(0x08) << 3) | BUTTON_DOWN(1)
     this.inputMouse(66);          // (BUTTON_BACK << 3) | BUTTON_UP → GLOBAL_ACTION_BACK
   }
   /** Home：鼠标中键快按 */
   mobileHome() {
+    console.info('[sundesk-nav] home: send mouse 33(down)+34(up), ws=', this._ws?._status);
     this.inputMouse(1 << 2 | 1);  // WHEEL_BUTTON_DOWN = 33
     this.inputMouse(1 << 2 | 2);  // WHEEL_BUTTON_UP = 34
   }
   /** 最近任务：鼠标中键按住 500ms（桌面端取值；被控端 200ms 即触发 RECENTS） */
   async mobileApps() {
+    const t0 = Date.now();
+    console.info('[sundesk-nav] recent: mouse 33(down), hold 500ms, ws=', this._ws?._status);
     this.inputMouse(1 << 2 | 1);
     await sleep(500);
     this.inputMouse(1 << 2 | 2);
+    console.info('[sundesk-nav] recent: mouse 34(up) sent after', Date.now() - t0, 'ms');
   }
   /**
    * 发送移动端控制键的按下+抬起（对齐桌面端 tapHidKey：down → 100ms → up）。
@@ -1409,7 +1424,10 @@ export default class Connection {
     shift: Boolean = false,
     command: Boolean = false
   ) {
-    if (this._ws?._status !== 'open') return;
+    if (this._ws?._status !== 'open') {
+      console.warn('[sundesk-nav] inputMouse DROPPED, ws not open:', this._ws?._status, 'mask=', mask);
+      return;
+    }
     const mouse_event = message.MouseEvent.fromPartial({
       mask,
       x,

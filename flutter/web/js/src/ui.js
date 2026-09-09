@@ -605,9 +605,11 @@ if (app) {
     const conn = globals.getConn();
     if (!conn) return;
     if (!fmSelected.size) { fmSetStatus('未选择任何条目'); return; }
+    console.info('[sundesk-dl] fmReceive click: selected=', [...fmSelected], 'fmPath=', fmPath);
     fmSelected.forEach(name => {
       const full = fmJoin(fmPath, name);
       const { id, promise } = conn.downloadRemotePath(full);
+      console.info('[sundesk-dl] queued job', id, full);
       const row = ensureTransferRow(id, name, 'down');
       row.dataset.target = full;
       promise.then(() => {
@@ -951,10 +953,12 @@ if (app) {
     // 下载完成保存：本地已授权 → 写入【当前浏览的本地目录】（不是授权根目录）；
     // 未授权则返回 false，走浏览器下载（保留原文件名）。
     conn.onDownloadFile = async (jobId, relPath, blob) => {
+      console.info('[sundesk-dl] save hook: locHandle=', !!locHandle, 'locPath=', JSON.stringify(locPath), 'file=', relPath, blob.size, 'bytes');
       if (!locHandle) return false;
       const parts = [...locPath, ...relPath.split('/').filter(Boolean)];
       if (!parts.length) return false;
       const ok = await localfs.writeFile(locHandle, parts, new Uint8Array(await blob.arrayBuffer()));
+      console.info('[sundesk-dl] writeFile ->', ok, parts.join('/'));
       if (ok) {
         const row = document.querySelector('#transfer-' + jobId);
         if (row) row.querySelector('.t-meta').textContent = '已保存到本地: ' + parts.join('/');
