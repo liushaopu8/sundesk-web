@@ -47,8 +47,18 @@
   border-bottom: 1px solid #e2e8f0;
 }
 .fm-actions {
-  /* 操作行内容靠近面板右侧（对齐 Windows 布局） */
-  justify-content: flex-end;
+  /* 双栏镜像布局：本地栏图标靠左发送靠右，远程栏发送靠左图标靠右，
+     使两个「发送」按钮在中间相邻；其余内容靠两栏外侧 */
+  justify-content: space-between;
+}
+.fm-action-cluster {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.fm-actions .fm-primary {
+  flex: 0 0 auto;
 }
 .fm-toolbar {
   background: #f8fafc;

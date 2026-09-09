@@ -128,12 +128,15 @@ if (app) {
           ${iconBtn('refresh', 'locRefresh()', '刷新')}
         </div>
         <div class="fm-actions">
-          ${iconBtn('home', 'locHome()', '默认目录')}
-          ${iconBtn('plus', 'locMkdir()', '新建文件夹')}
-          ${iconBtn('trash', 'locDelete()', '删除所选')}
-          ${iconBtn('check', 'locToggleSelectAll()', '全选/取消全选')}
-          <label class="fm-hidden"><input type="checkbox" id="loc-hidden" onchange="locRefresh()" /> 显示隐藏</label>
-          <button class="fm-primary" onclick="locSend()" title="上传所选到远程当前目录">发送 ${ICONS.send.replace('width="18"', 'width="14"')}</button>        </div>
+          <span class="fm-action-cluster">
+            ${iconBtn('home', 'locHome()', '默认目录')}
+            ${iconBtn('plus', 'locMkdir()', '新建文件夹')}
+            ${iconBtn('trash', 'locDelete()', '删除所选')}
+            ${iconBtn('check', 'locToggleSelectAll()', '全选/取消全选')}
+            <label class="fm-hidden"><input type="checkbox" id="loc-hidden" onchange="locRefresh()" /> 显示隐藏</label>
+          </span>
+          <button class="fm-primary" onclick="locSend()" title="上传所选到远程当前目录">发送 ${ICONS.send.replace('width="18"', 'width="14"')}</button>
+        </div>
         <table class="fm-list">
           <thead><tr>
             <th class="fm-cb"></th>
@@ -156,12 +159,14 @@ if (app) {
           ${iconBtn('refresh', 'fmRefresh()', '刷新')}
         </div>
         <div class="fm-actions">
-          ${iconBtn('home', 'fmHome()', '默认目录')}
-          ${iconBtn('plus', 'fmMkdir()', '新建文件夹')}
-          ${iconBtn('trash', 'fmDelete()', '删除所选')}
-          ${iconBtn('check', 'fmToggleSelectAll()', '全选/取消全选')}
-          <label class="fm-hidden"><input type="checkbox" id="fm-hidden" onchange="fmRefresh()" /> 显示隐藏</label>
           <button class="fm-primary" onclick="fmReceive()" title="发送所选到本地当前目录">发送 ${ICONS.receive.replace('width="18"', 'width="14"')}</button>
+          <span class="fm-action-cluster">
+            ${iconBtn('home', 'fmHome()', '默认目录')}
+            ${iconBtn('plus', 'fmMkdir()', '新建文件夹')}
+            ${iconBtn('trash', 'fmDelete()', '删除所选')}
+            ${iconBtn('check', 'fmToggleSelectAll()', '全选/取消全选')}
+            <label class="fm-hidden"><input type="checkbox" id="fm-hidden" onchange="fmRefresh()" /> 显示隐藏</label>
+          </span>
         </div>
         <table class="fm-list">
           <thead><tr>
