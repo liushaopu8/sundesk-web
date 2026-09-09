@@ -30,6 +30,7 @@ type DownloadJob = {
   chunks: Uint8Array[];
   received: number;
   currentFileNum: number;
+  singleName?: string;   // 单文件下载时的原始文件名（服务端 entries 为空时兜底用）
   resolve: () => void;
   reject: (e: any) => void;
 };
@@ -720,6 +721,7 @@ export default class Connection {
     const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
     const job: DownloadJob = {
       id, path, entries: [], chunks: [], received: 0, currentFileNum: 0,
+      singleName: path.split('/').filter(Boolean).pop() || path.split('\\').filter(Boolean).pop() || undefined,
       resolve: resolve!, reject: reject!,
     };
     this._downloads.set(id, job);
@@ -784,8 +786,10 @@ export default class Connection {
 
   /** 保存已下载完成的单个文件：优先写本地授权目录（UI 钩子），否则浏览器下载兜底 */
   async saveDownloadedFile(job: DownloadJob, fileNum: number) {
+    // 优先：服务端目录列表里的条目名（多文件/目录下载）
+    // 兜底：单文件下载且服务端未回目录列表时，用请求路径的 basename
     const entry = job.entries[fileNum];
-    const relPath = entry?.name || ('download_' + job.id + '_' + fileNum);
+    const relPath = entry?.name || job.singleName || ('download_' + job.id + '_' + fileNum);
     const blob = new Blob(job.chunks as BlobPart[], { type: 'application/octet-stream' });
     job.chunks = [];
     job.received = 0;
@@ -1365,19 +1369,19 @@ export default class Connection {
     this.inputMouse(65);          // (BUTTON_BACK(0x08) << 3) | BUTTON_DOWN(1)
     this.inputMouse(66);          // (BUTTON_BACK << 3) | BUTTON_UP → GLOBAL_ACTION_BACK
   }
-  /** Home：鼠标中键快按 */
+  /** Home：鼠标中键快按（掩码=WHEEL(0x04)<<3 | DOWN/UP → 33/34） */
   mobileHome() {
     console.info('[sundesk-nav] home: send mouse 33(down)+34(up), ws=', this._ws?._status);
-    this.inputMouse(1 << 2 | 1);  // WHEEL_BUTTON_DOWN = 33
-    this.inputMouse(1 << 2 | 2);  // WHEEL_BUTTON_UP = 34
+    this.inputMouse(33);          // (0x04 << 3) | 1 = 33
+    this.inputMouse(34);          // (0x04 << 3) | 2 = 34
   }
   /** 最近任务：鼠标中键按住 500ms（桌面端取值；被控端 200ms 即触发 RECENTS） */
   async mobileApps() {
     const t0 = Date.now();
     console.info('[sundesk-nav] recent: mouse 33(down), hold 500ms, ws=', this._ws?._status);
-    this.inputMouse(1 << 2 | 1);
+    this.inputMouse(33);
     await sleep(500);
-    this.inputMouse(1 << 2 | 2);
+    this.inputMouse(34);
     console.info('[sundesk-nav] recent: mouse 34(up) sent after', Date.now() - t0, 'ms');
   }
   /**
