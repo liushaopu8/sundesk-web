@@ -133,8 +133,7 @@ if (app) {
           ${iconBtn('trash', 'locDelete()', '删除所选')}
           ${iconBtn('check', 'locToggleSelectAll()', '全选/取消全选')}
           <label class="fm-hidden"><input type="checkbox" id="loc-hidden" onchange="locRefresh()" /> 显示隐藏</label>
-          <button class="fm-primary" onclick="locSend()" title="上传所选到远程当前目录">发送 ${ICONS.send.replace('width="18"', 'width="14"')}</button>
-        </div>
+          <button class="fm-primary" onclick="locSend()" title="上传所选到远程当前目录">发送 ${ICONS.send.replace('width="18"', 'width="14"')}</button>        </div>
         <table class="fm-list">
           <thead><tr>
             <th class="fm-cb"></th>
@@ -157,12 +156,12 @@ if (app) {
           ${iconBtn('refresh', 'fmRefresh()', '刷新')}
         </div>
         <div class="fm-actions">
-          <button class="fm-primary" onclick="fmReceive()" title="发送所选到本地当前目录">发送 ${ICONS.send.replace('width="18"', 'width="14"')}</button>
           ${iconBtn('home', 'fmHome()', '默认目录')}
           ${iconBtn('plus', 'fmMkdir()', '新建文件夹')}
           ${iconBtn('trash', 'fmDelete()', '删除所选')}
           ${iconBtn('check', 'fmToggleSelectAll()', '全选/取消全选')}
           <label class="fm-hidden"><input type="checkbox" id="fm-hidden" onchange="fmRefresh()" /> 显示隐藏</label>
+          <button class="fm-primary" onclick="fmReceive()" title="发送所选到本地当前目录">发送 ${ICONS.receive.replace('width="18"', 'width="14"')}</button>
         </div>
         <table class="fm-list">
           <thead><tr>
@@ -606,9 +605,10 @@ if (app) {
     if (!conn) return;
     if (!fmSelected.size) { fmSetStatus('未选择任何条目'); return; }
     console.info('[sundesk-dl] fmReceive click: selected=', [...fmSelected], 'fmPath=', fmPath);
+    const includeHidden = !!document.querySelector('#fm-hidden')?.checked;
     fmSelected.forEach(name => {
       const full = fmJoin(fmPath, name);
-      const { id, promise } = conn.downloadRemotePath(full);
+      const { id, promise } = conn.downloadRemotePath(full, includeHidden);
       console.info('[sundesk-dl] queued job', id, full);
       const row = ensureTransferRow(id, name, 'down');
       row.dataset.target = full;
@@ -965,6 +965,13 @@ if (app) {
         locRefresh();
       }
       return ok;
+    };
+    // 空目录 / 仅隐藏文件：探测完成后给个准确提示
+    conn.onEmptyDownload = (path, hidden) => {
+      const fm = document.querySelector('#fm-status');
+      if (fm) fm.textContent = hidden > 0
+        ? '目标仅含 ' + hidden + ' 个隐藏文件（勾选「显示隐藏」后发送可包含）'
+        : '空文件夹，无文件可下载';
     };
   }
 

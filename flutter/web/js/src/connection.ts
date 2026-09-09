@@ -79,6 +79,8 @@ export default class Connection {
   _uploads: Map<number, UploadJob>;
   onDownloadProgress?: (id: number, fileName: string, received: number, total: number) => void;
   onUploadProgress?: (id: number, fileName: string, sent: number, total: number) => void;
+  /** 下载目标为空时的回调：hiddenCount>0 表示仅含隐藏文件（需要勾选显示隐藏才能下载） */
+  onEmptyDownload?: (path: string, hiddenCount: number) => void;
   // 下载文件保存钩子：UI 侧尝试写入本地授权目录；返回 false 则走浏览器下载兜底
   onDownloadFile?: (jobId: number, relPath: string, data: Blob) => Promise<boolean>;
   //_cursors: { [name: number]: any };
@@ -715,7 +717,7 @@ export default class Connection {
    * 下载远程文件或目录。
    * 发 FileAction.send，服务端回目录列表（entries），随后逐文件 digest→block→done。
    */
-  downloadRemotePath(path: string): { id: number; promise: Promise<void> } {
+  downloadRemotePath(path: string, includeHidden: boolean = false): { id: number; promise: Promise<void> } {
     const id = this._downloadId++;
     let resolve: () => void, reject: (e: any) => void;
     const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
@@ -727,10 +729,10 @@ export default class Connection {
     this._downloads.set(id, job);
     const action = message.FileAction.fromPartial({
       send: message.FileTransferSendRequest.fromPartial({
-        id, path, file_num: 0, include_hidden: false,
+        id, path, file_num: 0, include_hidden: includeHidden,
       }),
     });
-    console.info('[sundesk-dl] download START job', id, 'path=', path);
+    console.info('[sundesk-dl] download START job', id, 'path=', path, 'includeHidden=', includeHidden);
     this._ws?.sendMessage({ file_action: action });
     return { id, promise };
   }
@@ -746,6 +748,21 @@ export default class Connection {
     if (job.entries.length === 0) {
       job.resolve();
       this._downloads.delete(d.id);
+      // 探测是否“仅含隐藏文件”（可见列表为空但 include_hidden=true 有内容）
+      this.probeHiddenOnly(d.path);
+    }
+  }
+
+  /** 目录列出来为空时，再带 include_hidden=true 探测一次，区分“真空目录”与“仅隐藏文件”。 */
+  async probeHiddenOnly(path: string) {
+    try {
+      const dir = await this.readRemoteDir(path, true);
+      const hidden = (dir.entries || []).length;
+      console.info('[sundesk-dl] empty probe:', path, 'hidden-only entries=', hidden);
+      this.onEmptyDownload?.(path, hidden);
+    } catch (e) {
+      console.warn('[sundesk-dl] empty probe failed:', path, e);
+      this.onEmptyDownload?.(path, 0);
     }
   }
 
