@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # 打包「可嵌入库」（无源码改动版）：
-#   outputs/sundesk-web-client-<ver>/        包目录
-#   outputs/sundesk-web-client-<ver>.tgz     npm 可直接 install 的 tarball
-# 依赖：vite build 已产出 flutter/web/js/dist（未改动源码），web_deps 已解压到 web_deps/。
+#   <OUT>/sundesk-web-client-<label>/            包目录
+#   <OUT>/sundesk-web-client-<npmversion>.tgz    npm 标准 tarball（npm install 直接可用）
+# 依赖：vite build 产出 flutter/web/js/dist（未改动源码），web_deps 已解压。
+#
+# 环境变量（CI 用）：
+#   WEB_DEPS_DIR  web_deps 解压目录（默认 <repo>/web_deps）
+#   NPM_VERSION   写入 package.json 的 semver（默认 0.1.0；打 tag v1.2.3 时传 1.2.3）
+#   OUT_DIR       产物输出目录（默认 <repo>/outputs）
+# 用法：bash embed/build-lib.sh [label]   label 默认取当天日期，仅用于包目录名
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -10,14 +16,21 @@ ROOT="$(cd "$HERE/.." && pwd)"                 # sundesk-web/
 JS="$ROOT/flutter/web/js"
 WEB="$ROOT/flutter/web"
 EMBED="$ROOT/embed/sundesk-web-client"
-OUT="$ROOT/outputs"
-VER="${1:-$(date +%Y%m%d)}"
-PKG="sundesk-web-client-$VER"
+OUT="${OUT_DIR:-$ROOT/outputs}"
+LABEL="${1:-$(date +%Y%m%d)}"
+NPM_VERSION="${NPM_VERSION:-0.1.0}"
+PKG="sundesk-web-client-$LABEL"
 DEPS="${WEB_DEPS_DIR:-$ROOT/web_deps}"
 
-echo "==> assembling $PKG"
+echo "==> assembling $PKG (npm version $NPM_VERSION)"
 rm -rf "$OUT/$PKG"
 mkdir -p "$OUT/$PKG/runtime" "$OUT/$PKG/assets/ogvjs-1.8.6"
+
+# 0) 若 dist 尚未构建，兜底先 vite build（本地/CI 都可直接跑本脚本）
+if [ ! -f "$JS/dist/index.js" ]; then
+  echo "==> dist 不存在，先执行 vite build"
+  (cd "$JS" && (yarn install --frozen-lockfile || yarn install) && npx vite build)
+fi
 
 # 1) 运行时（未改动的 vite 产物）
 cp "$JS/dist/index.js" "$JS/dist/vendor.js" "$JS/dist/index.css" "$OUT/$PKG/runtime/"
@@ -37,11 +50,11 @@ cp "$EMBED/index.mjs" "$OUT/$PKG/index.mjs"
 cp "$EMBED/index.d.ts" "$OUT/$PKG/index.d.ts" 2>/dev/null || true
 cp "$EMBED/README.md" "$OUT/$PKG/README.md" 2>/dev/null || true
 
-# 4) package.json
+# 4) package.json（版本由 NPM_VERSION 注入）
 cat > "$OUT/$PKG/package.json" <<JSON
 {
   "name": "sundesk-web-client",
-  "version": "0.1.0",
+  "version": "$NPM_VERSION",
   "description": "Embeddable SunDesk web remote-desktop client (wrapper around the stock web build; no source changes).",
   "type": "module",
   "main": "./index.mjs",
@@ -55,8 +68,15 @@ cat > "$OUT/$PKG/package.json" <<JSON
 }
 JSON
 
-# 5) tgz
-cd "$OUT"
-tar czf "$PKG.tgz" "$PKG"
-echo "==> done: $OUT/$PKG.tgz"
-du -sh "$OUT/$PKG" "$OUT/$PKG.tgz"
+# 5) 标准 npm tarball：sundesk-web-client-<version>.tgz
+rm -f "$OUT/sundesk-web-client-$NPM_VERSION.tgz"
+if command -v npm >/dev/null 2>&1; then
+  (cd "$OUT/$PKG" && npm pack --pack-destination "$OUT" >/dev/null)
+else
+  # 无 npm 环境兜底：手工打包（npm install 仍可识别）
+  (cd "$OUT" && tar czf "sundesk-web-client-$NPM_VERSION.tgz" "$PKG")
+fi
+
+echo "==> done"
+ls -la "$OUT"/sundesk-web-client-*.tgz
+du -sh "$OUT/$PKG"

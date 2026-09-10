@@ -100,3 +100,75 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: sundesk-web-${{ env.VERSION }}-web-basic.zip
+
+  build-embed-lib:
+    name: build-sundesk-web-client-tgz
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Prepare env
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y wget npm
+
+      # 纯 vite 构建（不跑 python 代码生成；gen_*.ts 已在仓库里）
+      - name: Build TS UI (vite)
+        shell: bash
+        run: |
+          pushd flutter/web/js
+          npm install yarn -g
+          yarn install --frozen-lockfile || yarn install
+          npx vite build
+          popd
+
+      - name: Download web deps
+        run: |
+          wget -q -O /tmp/web_deps.tar.gz https://github.com/rustdesk/doc.rustdesk.com/releases/download/console/web_deps.tar.gz
+          mkdir -p web_deps
+          tar tzf /tmp/web_deps.tar.gz >/dev/null || { echo "web_deps download corrupted"; exit 1; }
+          tar xzf /tmp/web_deps.tar.gz -C web_deps/
+
+      # tag v1.2.3 -> NPM_VERSION=1.2.3；分支/push -> 0.1.0-dev.<run>
+      - name: Compute package version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            NPM_VERSION="${TAG#v}"
+          else
+            NPM_VERSION="0.1.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "npm_version=$NPM_VERSION" >> "$GITHUB_OUTPUT"
+          echo "NPM_VERSION=$NPM_VERSION"
+
+      # 产出 outputs/sundesk-web-client-<version>.tgz（标准 npm tarball）
+      - name: Assemble embeddable library
+        shell: bash
+        run: |
+          chmod +x embed/build-lib.sh
+          WEB_DEPS_DIR="$PWD/web_deps" \
+          NPM_VERSION="${{ steps.ver.outputs.npm_version }}" \
+            bash embed/build-lib.sh "${GITHUB_REF_NAME}-${GITHUB_RUN_NUMBER}"
+
+      - name: Show artifact
+        run: |
+          ls -la outputs/sundesk-web-client-*.tgz
+          tar tzf outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.tgz | head
+
+      # 每次 push/PR 都可在 Actions 运行页下载该 tgz
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sundesk-web-client-${{ steps.ver.outputs.npm_version }}
+          path: outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.tgz
+          if-no-files-found: error
+
+      # 打 tag 时同时把 tgz 挂到 GitHub Release，供同事直接下载 / npm install <url>
+      - name: Upload release asset (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.tgz
