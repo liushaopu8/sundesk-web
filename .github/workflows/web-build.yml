@@ -111,16 +111,19 @@ jobs:
       - name: Prepare env
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y wget npm
+          sudo apt-get install -y wget npm python3 zip
 
-      # 纯 vite 构建（不跑 python 代码生成；gen_*.ts 已在仓库里）
-      - name: Build TS UI (vite)
+      # 与 build-web 一致：先跑代码生成（ts_proto.py / gen_js_from_hbb.py 产出
+      # message.ts / rendezvous.ts 等，这些文件被 .gitignore 忽略，CI 必须现生成），
+      # 再 tsc + vite build。Python/protoc 仅用于我们的构建，同事 npm install 产物不需要。
+      - name: Build TS UI (codegen + tsc + vite)
         shell: bash
         run: |
           pushd flutter/web/js
           npm install yarn -g
+          npm install protoc -g
           yarn install --frozen-lockfile || yarn install
-          npx vite build
+          yarn build
           popd
 
       - name: Download web deps

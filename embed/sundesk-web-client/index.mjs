@@ -25,6 +25,11 @@
 
 const DEFAULT_ASSET_BASE = './assets/';
 
+// 环境默认值（TMS 只需传 sn；host/key 在此内置，可被 opts 覆盖）。
+// 与独立版 flutter/web/index.html 中的默认服务器/key 保持一致。
+const DEFAULT_HOST = '172.16.1.31';
+const DEFAULT_KEY = 'FSagyj6JvIpUf6xKzIKB1F3u1+xzUFuMT1sjry5zOyo=';
+
 /** Normalize asset base to always end with '/'. */
 function normBase(b) {
   const s = b || DEFAULT_ASSET_BASE;
@@ -109,12 +114,12 @@ export function mountSunDesk(el, opts = {}) {
   window.__SUNDESK_ASSET_BASE__ = assetBase;
 
   // Persist config where the runtime reads it from.
+  const host = opts.host || DEFAULT_HOST;
+  const key = opts.key || DEFAULT_KEY;
   if (opts.sn) localStorage.setItem('id', opts.sn);
-  if (opts.host) {
-    localStorage.setItem('custom-rendezvous-server', opts.host);
-    localStorage.setItem('relay-server', opts.host);
-  }
-  if (opts.key) localStorage.setItem('key', opts.key);
+  localStorage.setItem('custom-rendezvous-server', host);
+  localStorage.setItem('relay-server', host);
+  if (key) localStorage.setItem('key', key);
 
   // Event bridge: the runtime calls window.onGlobalEvent(json). We wrap it so the
   // host gets every event, then keep whatever handler was installed before.

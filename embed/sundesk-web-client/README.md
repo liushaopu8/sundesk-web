@@ -12,16 +12,27 @@ npm install ./sundesk-web-client-<ver>.tgz
 
 ## 使用（ESM）
 
+**TMS 通常只需传 `sn`**（host/key 已内置为当前环境默认值）：
+
 ```js
 import { mountSunDesk } from 'sundesk-web-client'
 import 'sundesk-web-client/style.css'
 
 const session = mountSunDesk(document.getElementById('host'), {
+  sn: 'DEVICE_SN',     // 设备 SN（每个设备不同，由 TMS 传入）
+  autoConnect: true,   // 挂载后自动连接
+})
+```
+
+如需覆盖服务器 / key，或不自动连接（显示连接页手填）：
+
+```js
+const session = mountSunDesk(document.getElementById('host'), {
   sn: 'DEVICE_SN',               // 设备 ID（SN）
-  host: '172.16.1.31',           // 服务器地址
-  key: 'LICENCE_KEY',            // licence key
-  mode: 'remote',                // 'remote' | 'file'
-  autoConnect: true,             // 挂载后自动连接
+  host: '172.16.1.31',           // 覆盖默认服务器地址
+  key: 'LICENCE_KEY',            // 覆盖默认 licence key
+  mode: 'remote',                // 'remote' | 'file'，默认 remote
+  autoConnect: false,            // 默认 false：显示连接页
   assetBase: '/sundesk-assets/', // ogvjs/yuv/libopus 的部署路径
   runtimeBase: '/sundesk-lib/',  // index.js/vendor.js/index.css 的部署路径
   onEvent: (e) => console.log(e),// 所有事件回调
