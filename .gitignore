@@ -57,3 +57,7 @@ libsciter.dylib
 flutter/build/
 flutter/.dart_tool/
 *.tar.gz
+
+# local build artifacts / vendored decoder deps
+outputs/
+web_deps/
