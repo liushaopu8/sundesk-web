@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SunDesk web client - local test</title>
+<style>
+  html,body{margin:0;height:100%;font-family:system-ui,sans-serif}
+  #bar{padding:8px 12px;background:#1f2937;color:#fff;display:flex;gap:8px;align-items:center}
+  #bar input{padding:6px 8px;border-radius:6px;border:1px solid #4b5563;background:#111827;color:#fff;min-width:220px}
+  #bar button{padding:6px 14px;border:0;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer}
+  #host{height:calc(100% - 48px)}
+</style>
+</head>
+<body>
+  <div id="bar">
+    <strong>SunDesk lib test</strong>
+    <input id="sn" placeholder="Device SN" />
+    <button id="go">Connect</button>
+    <span id="state" style="opacity:.8;font-size:12px"></span>
+  </div>
+  <div id="host"></div>
+
+  <script type="module">
+    import { mountSunDesk } from './index.mjs';
+
+    const stateEl = document.getElementById('state');
+    const hostEl = document.getElementById('host');
+
+    function mount(sn, autoConnect) {
+      return mountSunDesk(hostEl, {
+        // host (172.16.1.31) and licence key are built-in defaults; only SN is needed.
+        sn,
+        runtimeBase: './runtime/',
+        assetBase: './assets/',
+        autoConnect,
+        onEvent: (e) => {
+          stateEl.textContent = e.type;
+          console.log('[sundesk]', e);
+        },
+      });
+    }
+
+    let session = mount('', false);
+
+    document.getElementById('go').onclick = () => {
+      const sn = document.getElementById('sn').value.trim();
+      if (!sn) return alert('Enter a device SN first');
+      session.destroy();
+      session = mount(sn, true);
+    };
+  </script>
+</body>
+</html>
