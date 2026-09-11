@@ -15,7 +15,7 @@ env:
 jobs:
   # 结果 1/2：TMS 集成用 npm 包（.tgz）
   build-tgz:
-    name: 1-tms-integration-tgz
+    name: sundesk-web-remote (tgz)
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout source code
@@ -70,7 +70,7 @@ jobs:
       - name: Upload artifact 1 - TMS integration (tgz)
         uses: actions/upload-artifact@v4
         with:
-          name: 1-tms-integration-sundesk-web-client-${{ steps.ver.outputs.npm_version }}
+          name: sundesk-web-remote
           path: outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.tgz
           if-no-files-found: error
 
@@ -82,7 +82,7 @@ jobs:
 
   # 结果 2/2：本地 PC 整站包（原始连接页，可手填 IP / key / SN）
   build-local-pc:
-    name: 2-local-pc-website
+    name: sundesk-web-local (site)
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout source code
@@ -130,7 +130,7 @@ jobs:
       - name: Upload artifact 2 - local PC website
         uses: actions/upload-artifact@v4
         with:
-          name: 2-local-pc-sundesk-web-${{ env.VERSION }}-${{ github.run_number }}
+          name: sundesk-web-local
           path: pkg/*
 
       - name: Publish release zip (on tag)
