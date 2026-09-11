@@ -133,11 +133,16 @@ jobs:
           cp flutter/web/yuv.js flutter/web/yuv.wasm flutter/web/favicon.svg site/
 
       # 单层根文件夹：下载 artifact 解压后直接是 sundesk-web/，
-      # cd 进去 python -m http.server 即可，无第二层嵌套。
+      # 里面带一键启动脚本（Windows .bat / macOS .command），免敲命令；
+      # cd 进去 python -m http.server 的老办法仍然可用。
       - name: Stage single root folder
         run: |
           mkdir -p pkg
           cp -r site pkg/sundesk-web
+          cp embed/local-launchers/start-windows.bat pkg/sundesk-web/
+          cp embed/local-launchers/start-mac.command pkg/sundesk-web/
+          cp embed/local-launchers/README-local.txt pkg/sundesk-web/
+          chmod +x pkg/sundesk-web/start-mac.command
 
       - name: Upload artifact 2 - local PC website
         uses: actions/upload-artifact@v4
