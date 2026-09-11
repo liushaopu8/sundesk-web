@@ -77,6 +77,19 @@ else
   (cd "$OUT" && tar czf "sundesk-web-client-$NPM_VERSION.tgz" "$PKG")
 fi
 
+# 6) 本地 PC 测试包：sundesk-web-client-<version>/（单层根文件夹）
+#    只含浏览器运行所需：index.html / index.mjs / runtime/ / assets/，不含 npm 元数据。
+#    CI 直接上传该【文件夹】为 artifact（path 用 folder/* 通配），避免 GitHub 再套一层 zip。
+#    同时打一个同名 .zip 供 tag Release 上传（Release 是原始文件下载，单层结构）。
+ZIP_NAME="sundesk-web-client-$NPM_VERSION"
+ZIP_DIR="$OUT/$ZIP_NAME"
+rm -rf "$ZIP_DIR" "$OUT/$ZIP_NAME.zip"
+mkdir -p "$ZIP_DIR"
+cp "$OUT/$PKG/index.mjs" "$ZIP_DIR/"
+cp -r "$OUT/$PKG/runtime" "$OUT/$PKG/assets" "$ZIP_DIR/"
+cp "$EMBED/demo/index.html" "$ZIP_DIR/index.html"
+(cd "$OUT" && zip -qr "$ZIP_NAME.zip" "$ZIP_NAME")
+
 echo "==> done"
-ls -la "$OUT"/sundesk-web-client-*.tgz
-du -sh "$OUT/$PKG"
+ls -la "$OUT"/sundesk-web-client-*.tgz "$OUT"/sundesk-web-client-*.zip
+du -sh "$OUT/$PKG" "$ZIP_DIR"

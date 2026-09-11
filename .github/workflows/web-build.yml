@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     # 每个分支的每次 push 都自动构建（feature/*、fix/*、main 等），
-    # 这样推送到 feature/session-toolbar 等分支后能立刻在 Actions 产物里看到改动。
+    # 这样推送后能立刻在 Actions 产物里看到改动。
     branches: ["**"]
     tags: ["*"]
   pull_request:
@@ -13,96 +13,8 @@ env:
   VERSION: "1.2.5"
 
 jobs:
-  build-web:
-    name: build-sundesk-web
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout source code
-        uses: actions/checkout@v4
-
-      - name: Prepare env
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y wget npm python3 zip
-
-      # 不再使用 flutter build：flutter 复制静态资源时尊重 .gitignore，
-      # 会过滤掉 vite 产物（js/dist）和 web_deps（ogvjs*/yuv-canvas*/libopus*），
-      # 导致线上 404。改为纯 vite 构建 + 手工组装静态站点。
-      - name: Build TS UI (vite)
-        shell: bash
-        run: |
-          pushd flutter/web/js
-          npm install yarn -g
-          npm install protoc -g
-          yarn install && yarn build
-          popd
-
-      - name: Download web deps
-        run: |
-          wget -q -O /tmp/web_deps.tar.gz https://github.com/rustdesk/doc.rustdesk.com/releases/download/console/web_deps.tar.gz
-          tar tzf /tmp/web_deps.tar.gz >/dev/null || { echo "web_deps download corrupted"; exit 1; }
-
-      - name: Assemble static site
-        shell: bash
-        run: |
-          set -e
-          mkdir -p site
-          # vite 产物（index.html 引用 ./index.js、./vendor.js 相对路径）
-          cp -r flutter/web/js/dist/* site/
-          # web deps：ogvjs-1.8.6/、yuv-canvas-1.2.6.js、libopus.js/wasm
-          tar xzf /tmp/web_deps.tar.gz -C site/
-          # 其余静态资源
-          cp flutter/web/yuv.js flutter/web/yuv.wasm flutter/web/favicon.svg site/
-          ls -la site/
-
-      - name: Assemble single folder
-        run: |
-          mkdir -p pkg/sundesk-web
-          cp -r site/* pkg/sundesk-web/
-          # path 用 pkg/* 通配符：GitHub artifact 下载解压后直接是 sundesk-web/ 文件夹
-          # （upload-artifact 对通配符会自动展开一层，避免二次解压）
-
-      # 产物名带上分支名 + 运行号，避免不同分支/多次 push 的产物互相覆盖，
-      # 下载时一眼能看出是哪个分支的构建（如 sundesk-web-1.2.5-feature-session-toolbar-42）。
-      - name: Compute artifact name
-        id: art
-        run: |
-          REF="${GITHUB_REF_NAME}"            # 分支名或 tag 名
-          SAFE=$(echo "$REF" | tr '/ ' '--' | tr -cd 'A-Za-z0-9._-')
-          NAME="sundesk-web-${VERSION}-${SAFE}-${GITHUB_RUN_NUMBER}"
-          echo "name=$NAME" >> "$GITHUB_OUTPUT"
-          echo "Artifact name: $NAME"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.art.outputs.name }}
-          path: pkg/*
-
-      # GitHub Pages 部署已停用（2026-08-21）：Pages 是 https，浏览器强制 wss://，
-      # 本地 rustdesk-server 的 hbbs/hbbr 是明文 ws，无 TLS 反代连不上。
-      # 测试改走本地构建（artifact / 本地 http server）。
-      # - name: Deploy to GitHub Pages
-      #   if: github.ref == 'refs/heads/main'
-      #   uses: peaceiris/actions-gh-pages@v4
-      #   with:
-      #     github_token: ${{ secrets.GITHUB_TOKEN }}
-      #     publish_dir: site
-      #     publish_branch: gh-pages
-
-      - name: Publish release (on tag)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          cd pkg && zip -r ../sundesk-web-${{ env.VERSION }}-web-basic.zip sundesk-web
-        shell: bash
-      - name: Upload release asset (on tag)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: sundesk-web-${{ env.VERSION }}-web-basic.zip
-
   build-embed-lib:
-    name: build-sundesk-web-client-tgz
+    name: build-sundesk-web-client
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout source code
@@ -113,9 +25,9 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y wget npm python3 zip
 
-      # 与 build-web 一致：先跑代码生成（ts_proto.py / gen_js_from_hbb.py 产出
+      # 先跑代码生成（ts_proto.py / gen_js_from_hbb.py 产出
       # message.ts / rendezvous.ts 等，这些文件被 .gitignore 忽略，CI 必须现生成），
-      # 再 tsc + vite build。Python/protoc 仅用于我们的构建，同事 npm install 产物不需要。
+      # 再 tsc + vite build。Python/protoc 仅用于构建侧，同事 npm install 产物不需要。
       - name: Build TS UI (codegen + tsc + vite)
         shell: bash
         run: |
@@ -133,7 +45,7 @@ jobs:
           tar tzf /tmp/web_deps.tar.gz >/dev/null || { echo "web_deps download corrupted"; exit 1; }
           tar xzf /tmp/web_deps.tar.gz -C web_deps/
 
-      # tag v1.2.3 -> NPM_VERSION=1.2.3；分支/push -> 0.1.0-dev.<run>
+      # tag v1.2.3 -> NPM_VERSION=1.2.3；手动运行/分支 push -> 0.1.0-dev.<run>
       - name: Compute package version
         id: ver
         shell: bash
@@ -147,8 +59,11 @@ jobs:
           echo "npm_version=$NPM_VERSION" >> "$GITHUB_OUTPUT"
           echo "NPM_VERSION=$NPM_VERSION"
 
-      # 产出 outputs/sundesk-web-client-<version>.tgz（标准 npm tarball）
-      - name: Assemble embeddable library
+      # 产出 outputs/：
+      #   sundesk-web-client-<version>.tgz                      （TMS 集成用）
+      #   sundesk-web-client-<version>/   单层根文件夹（本地 PC 用）
+      #   sundesk-web-client-<version>.zip                      （仅 tag Release 用）
+      - name: Assemble packages
         shell: bash
         run: |
           chmod +x embed/build-lib.sh
@@ -156,22 +71,34 @@ jobs:
           NPM_VERSION="${{ steps.ver.outputs.npm_version }}" \
             bash embed/build-lib.sh "${GITHUB_REF_NAME}-${GITHUB_RUN_NUMBER}"
 
-      - name: Show artifact
-        run: |
-          ls -la outputs/sundesk-web-client-*.tgz
-          tar tzf outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.tgz | head
-
-      # 每次 push/PR 都可在 Actions 运行页下载该 tgz
-      - name: Upload artifact
+      # 结果 1/2：TMS 集成 tgz。GitHub 下载 artifact 会套一层 zip，里面就是这个 .tgz。
+      - name: Upload artifact 1 - TMS integration (tgz)
         uses: actions/upload-artifact@v4
         with:
-          name: sundesk-web-client-${{ steps.ver.outputs.npm_version }}
+          name: 1-tms-integration-sundesk-web-client-${{ steps.ver.outputs.npm_version }}
           path: outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.tgz
           if-no-files-found: error
 
-      # 打 tag 时同时把 tgz 挂到 GitHub Release，供同事直接下载 / npm install <url>
-      - name: Upload release asset (on tag)
+      # 结果 2/2：本地 PC 包。先把单层根文件夹放进干净的暂存目录，再用 stage/* 通配
+      # 上传（与旧 build-web 的 pkg/* 同款机制）：GitHub 下载时套的那层 zip 解压后
+      # 直接是 sundesk-web-client-<version>/，没有第二层嵌套。
+      # 用法：解压 -> cd sundesk-web-client-<version> -> python -m http.server。
+      - name: Stage local PC artifact
+        run: |
+          mkdir -p local-artifact
+          cp -r outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }} local-artifact/
+      - name: Upload artifact 2 - local PC package
+        uses: actions/upload-artifact@v4
+        with:
+          name: 2-local-pc-sundesk-web-client-${{ steps.ver.outputs.npm_version }}
+          path: local-artifact/*
+          if-no-files-found: error
+
+      # 打 tag 时把 tgz + zip 挂到 GitHub Release（Release 为原始文件下载，zip 单层无嵌套）
+      - name: Upload release assets (on tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.tgz
+          files: |
+            outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.tgz
+            outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.zip
