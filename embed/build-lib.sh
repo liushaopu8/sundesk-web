@@ -77,16 +77,6 @@ else
   (cd "$OUT" && tar czf "sundesk-web-client-$NPM_VERSION.tgz" "$PKG")
 fi
 
-# 6) 本地 PC 测试包：sundesk-web-client-<version>.zip
-#    解压后只有一个根文件夹 sundesk-web-client-<version>/，demo index.html 位于根，
-#    直接 cd 进去 python -m http.server 即可；不做第二层嵌套。
-ZIP_NAME="sundesk-web-client-$NPM_VERSION"
-ZIP_DIR="$OUT/$ZIP_NAME"
-rm -rf "$ZIP_DIR" "$OUT/$ZIP_NAME.zip"
-cp -r "$OUT/$PKG" "$ZIP_DIR"
-cp "$EMBED/demo/index.html" "$ZIP_DIR/index.html"
-(cd "$OUT" && zip -qr "$ZIP_NAME.zip" "$ZIP_NAME")
-
 echo "==> done"
-ls -la "$OUT"/sundesk-web-client-*.tgz "$OUT"/sundesk-web-client-*.zip
+ls -la "$OUT"/sundesk-web-client-*.tgz
 du -sh "$OUT/$PKG"
