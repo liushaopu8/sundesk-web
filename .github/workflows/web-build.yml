@@ -161,15 +161,22 @@ jobs:
           ls -la outputs/sundesk-web-client-*.tgz
           tar tzf outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.tgz | head
 
-      # 每次 push/PR 都可在 Actions 运行页下载：
-      #   .tgz = npm install 集成包（TMS）；.zip = 本地 PC 测试包（python http.server）
-      - name: Upload artifacts
+      # 每次 push/PR 产出两个独立 artifact（不要合在一个 artifact 里，否则下载后
+      # 又套一层 zip，分不清哪个包）：
+      #   ...-tgz：npm install 集成包（TMS）
+      #   ...-zip：本地 PC 测试包（python http.server）
+      - name: Upload tgz artifact (TMS integration)
         uses: actions/upload-artifact@v4
         with:
-          name: sundesk-web-client-${{ steps.ver.outputs.npm_version }}
-          path: |
-            outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.tgz
-            outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.zip
+          name: sundesk-web-client-tgz-${{ steps.ver.outputs.npm_version }}
+          path: outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.tgz
+          if-no-files-found: error
+
+      - name: Upload zip artifact (local PC test)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sundesk-web-client-zip-${{ steps.ver.outputs.npm_version }}
+          path: outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.zip
           if-no-files-found: error
 
       # 打 tag 时同时把 tgz + zip 挂到 GitHub Release

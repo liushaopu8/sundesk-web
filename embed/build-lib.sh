@@ -78,12 +78,15 @@ else
 fi
 
 # 6) 本地 PC 测试包：sundesk-web-client-<version>.zip
-#    解压后只有一个根文件夹 sundesk-web-client-<version>/，demo index.html 位于根，
-#    直接 cd 进去 python -m http.server 即可；不做第二层嵌套。
+#    解压后只有一个根文件夹 sundesk-web-client-<version>/，里面只有：
+#    index.html / index.mjs / runtime/ / assets/
+#    直接 cd 进去 python -m http.server 即可；不含 npm 元数据，不做第二层嵌套。
 ZIP_NAME="sundesk-web-client-$NPM_VERSION"
 ZIP_DIR="$OUT/$ZIP_NAME"
 rm -rf "$ZIP_DIR" "$OUT/$ZIP_NAME.zip"
-cp -r "$OUT/$PKG" "$ZIP_DIR"
+mkdir -p "$ZIP_DIR"
+cp "$OUT/$PKG/index.mjs" "$ZIP_DIR/"
+cp -r "$OUT/$PKG/runtime" "$OUT/$PKG/assets" "$ZIP_DIR/"
 cp "$EMBED/demo/index.html" "$ZIP_DIR/index.html"
 (cd "$OUT" && zip -qr "$ZIP_NAME.zip" "$ZIP_NAME")
 
