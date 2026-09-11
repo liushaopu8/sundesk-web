@@ -13,8 +13,9 @@ env:
   VERSION: "1.2.5"
 
 jobs:
-  build-embed-lib:
-    name: build-sundesk-web-client
+  # 结果 1/2：TMS 集成用 npm 包（.tgz）
+  build-tgz:
+    name: 1-tms-integration-tgz
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout source code
@@ -51,19 +52,13 @@ jobs:
         shell: bash
         run: |
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            TAG="${GITHUB_REF_NAME}"
-            NPM_VERSION="${TAG#v}"
+            NPM_VERSION="${GITHUB_REF_NAME#v}"
           else
             NPM_VERSION="0.1.0-dev.${GITHUB_RUN_NUMBER}"
           fi
           echo "npm_version=$NPM_VERSION" >> "$GITHUB_OUTPUT"
-          echo "NPM_VERSION=$NPM_VERSION"
 
-      # 产出 outputs/：
-      #   sundesk-web-client-<version>.tgz                      （TMS 集成用）
-      #   sundesk-web-client-<version>/   单层根文件夹（本地 PC 用）
-      #   sundesk-web-client-<version>.zip                      （仅 tag Release 用）
-      - name: Assemble packages
+      - name: Assemble tgz
         shell: bash
         run: |
           chmod +x embed/build-lib.sh
@@ -71,7 +66,7 @@ jobs:
           NPM_VERSION="${{ steps.ver.outputs.npm_version }}" \
             bash embed/build-lib.sh "${GITHUB_REF_NAME}-${GITHUB_RUN_NUMBER}"
 
-      # 结果 1/2：TMS 集成 tgz。GitHub 下载 artifact 会套一层 zip，里面就是这个 .tgz。
+      # GitHub 下载 artifact 会套一层 zip，里面就是这个 .tgz。
       - name: Upload artifact 1 - TMS integration (tgz)
         uses: actions/upload-artifact@v4
         with:
@@ -79,26 +74,71 @@ jobs:
           path: outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.tgz
           if-no-files-found: error
 
-      # 结果 2/2：本地 PC 包。先把单层根文件夹放进干净的暂存目录，再用 stage/* 通配
-      # 上传（与旧 build-web 的 pkg/* 同款机制）：GitHub 下载时套的那层 zip 解压后
-      # 直接是 sundesk-web-client-<version>/，没有第二层嵌套。
-      # 用法：解压 -> cd sundesk-web-client-<version> -> python -m http.server。
-      - name: Stage local PC artifact
-        run: |
-          mkdir -p local-artifact
-          cp -r outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }} local-artifact/
-      - name: Upload artifact 2 - local PC package
-        uses: actions/upload-artifact@v4
-        with:
-          name: 2-local-pc-sundesk-web-client-${{ steps.ver.outputs.npm_version }}
-          path: local-artifact/*
-          if-no-files-found: error
-
-      # 打 tag 时把 tgz + zip 挂到 GitHub Release（Release 为原始文件下载，zip 单层无嵌套）
-      - name: Upload release assets (on tag)
+      - name: Upload tgz to release (on tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.tgz
-            outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.zip
+          files: outputs/sundesk-web-client-${{ steps.ver.outputs.npm_version }}.tgz
+
+  # 结果 2/2：本地 PC 整站包（原始连接页，可手填 IP / key / SN）
+  build-local-pc:
+    name: 2-local-pc-website
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Prepare env
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y wget npm python3 zip
+
+      # 纯 vite 构建 + 手工组装静态站点（flutter build 会尊重 .gitignore 漏掉产物）。
+      - name: Build TS UI (vite)
+        shell: bash
+        run: |
+          pushd flutter/web/js
+          npm install yarn -g
+          npm install protoc -g
+          yarn install && yarn build
+          popd
+
+      - name: Download web deps
+        run: |
+          wget -q -O /tmp/web_deps.tar.gz https://github.com/rustdesk/doc.rustdesk.com/releases/download/console/web_deps.tar.gz
+          tar tzf /tmp/web_deps.tar.gz >/dev/null || { echo "web_deps download corrupted"; exit 1; }
+
+      - name: Assemble static site
+        shell: bash
+        run: |
+          set -e
+          mkdir -p site
+          # vite 产物（index.html 引用 ./index.js、./vendor.js 相对路径）
+          cp -r flutter/web/js/dist/* site/
+          # web deps：ogvjs-1.8.6/、yuv-canvas-1.2.6.js、libopus.js/wasm
+          tar xzf /tmp/web_deps.tar.gz -C site/
+          # 其余静态资源
+          cp flutter/web/yuv.js flutter/web/yuv.wasm flutter/web/favicon.svg site/
+
+      # 单层根文件夹：下载 artifact 解压后直接是 sundesk-web/，
+      # cd 进去 python -m http.server 即可，无第二层嵌套。
+      - name: Stage single root folder
+        run: |
+          mkdir -p pkg
+          cp -r site pkg/sundesk-web
+
+      - name: Upload artifact 2 - local PC website
+        uses: actions/upload-artifact@v4
+        with:
+          name: 2-local-pc-sundesk-web-${{ env.VERSION }}-${{ github.run_number }}
+          path: pkg/*
+
+      - name: Publish release zip (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cd pkg && zip -r ../sundesk-web-${{ env.VERSION }}-web-basic.zip sundesk-web
+      - name: Upload zip to release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: sundesk-web-${{ env.VERSION }}-web-basic.zip
